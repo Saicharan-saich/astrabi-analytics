@@ -84,3 +84,21 @@ describe('loading cells into DuckDB', () => {
         expect(duckLiteral('true', 'BOOLEAN')).toBe('TRUE');
     });
 });
+
+describe('unusual values in a shop with a few dearer products', () => {
+    // £3 coffees and a £8.50 bag of beans or a £12 cup: price points, not mistakes.
+    const prices = [...Array.from({ length: 300 }, (_, i) => [2.9, 3.4, 3.5][i % 3]), ...Array(20).fill(8.5), ...Array(8).fill(12)];
+    it('does not call a repeated price point an outlier or impossible', async () => {
+        const { detectOutliersIQR } = await import('../services/etlHardening');
+        const { suspectValues } = await import('../utils/plausibility');
+        expect(detectOutliersIQR(prices)).toBeNull();
+        expect(suspectValues(prices, 'unit_price')).toEqual([]);
+    });
+    it('still flags a one-off typo', async () => {
+        const { detectOutliersIQR } = await import('../services/etlHardening');
+        const { suspectValues } = await import('../utils/plausibility');
+        const typo = [...prices, 340];
+        expect(detectOutliersIQR(typo)?.examples).toContain(340);
+        expect(suspectValues(typo, 'unit_price').map(v => v.value)).toEqual([340]);
+    });
+});

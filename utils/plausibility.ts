@@ -7,8 +7,9 @@
  *     hours in a day ≤ 24, hours in a week ≤ 168, minutes in a day ≤ 1,440,
  *     ages 0–125, percentages 0–100, month numbers 1–12, days of the month
  *     1–31, years 1900–2100.
- *   Wildly out of line: more than 20 interquartile ranges beyond the middle
- *     half of the column's own values (a typo like 342 among 0–16).
+ *   Wildly out of line: a one-off value more than 20 interquartile ranges
+ *     beyond the middle half and more than 10× the typical size away from the
+ *     middle (a typo like 342 among 0–16; never a repeated price point).
  *
  * Used by the cleaner (flagged for review, never changed) and by the answer
  * check (an answer that includes such a value says so, with the effect of
@@ -67,10 +68,17 @@ export function suspectValues(values: unknown[], column: string): SuspectValue[]
     const sorted = nums.map(n => n.v).sort((a, b) => a - b);
     const q = (p: number) => { const pos = (sorted.length - 1) * p; const lo = Math.floor(pos); return sorted[lo] + (sorted[Math.ceil(pos)] - sorted[lo]) * (pos - lo); };
     const q1 = q(0.25), q3 = q(0.75), iqr = q3 - q1;
+    const median = q(0.5);
     if (iqr > 0) {
+        // A typo is a one-off, and an order of magnitude away: 342 among 0–16. A value that
+        // recurs (an £8.50 product among £3 coffees) or sits within 10× the middle is real.
+        const counts = new Map<number, number>();
+        for (const n of nums) counts.set(n.v, (counts.get(n.v) || 0) + 1);
+        const scale = Math.max(Math.abs(median), iqr);
         for (const n of nums) {
-            if (seen.has(n.row)) continue;
-            if (n.v > q3 + 20 * iqr || n.v < q1 - 20 * iqr) out.push({ value: n.v, row: n.row, why: 'it is far outside every other value in the column' });
+            if (seen.has(n.row) || counts.get(n.v)! >= 3) continue;
+            const far = n.v > q3 + 20 * iqr || n.v < q1 - 20 * iqr;
+            if (far && Math.abs(n.v - median) > 10 * scale) out.push({ value: n.v, row: n.row, why: 'it is far outside every other value in the column' });
         }
     }
     return out;

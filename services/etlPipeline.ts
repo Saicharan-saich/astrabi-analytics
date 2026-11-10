@@ -1891,10 +1891,11 @@ function layer5b_hardening(
         if (!r) continue;
         const choice = outlierDecisions[c.name];
         const range = `[${r.lowerBound.toFixed(2)}, ${r.upperBound.toFixed(2)}]`;
+        const exempt = new Set(r.exempt || []);
         const isOutlier = (value: unknown) => {
             if (value === null || value === undefined || value === '') return false;
             const n = Number(value);
-            return Number.isFinite(n) && (n < r.lowerBound || n > r.upperBound);
+            return Number.isFinite(n) && (n < r.lowerBound || n > r.upperBound) && !exempt.has(n);
         };
         const undo = { option: 'outlierDecisions' as const, value: withoutDecision(outlierDecisions, c.name), label: `Review '${c.name}' again` };
         if (choice === 'keep') {
@@ -2077,21 +2078,11 @@ function layer6_dataContractValidation(
             }
 
             // Outlier detection (IQR)
-            const numVals = values.filter(v => typeof v === 'number' && !isNaN(v)).sort((a, b) => a - b) as number[];
-            if (numVals.length >= 10) {
-                const q1 = numVals[Math.floor(numVals.length * 0.25)];
-                const q3 = numVals[Math.floor(numVals.length * 0.75)];
-                const iqr = q3 - q1;
-                if (iqr > 0) {
-                    const lower = q1 - 1.5 * iqr;
-                    const upper = q3 + 1.5 * iqr;
-                    const outliers = numVals.filter(v => v < lower || v > upper);
-                    const outlierCount = outliers.length;
-                    if (outlierCount > 0) {
-                        const examples = outliers.slice(0, 5).map(v => v.toLocaleString(undefined, { maximumFractionDigits: 2 })).join(', ');
-                        violations.push({ column: col, rule: 'OUTLIER', severity: 'soft', message: `${col}: ${outlierCount} outlier(s) outside [${lower.toFixed(1)}, ${upper.toFixed(1)}]. Examples: ${examples}` });
-                    }
-                }
+            // The same rule as the outlier flag: rare values only, never a whole spread-out column.
+            const report = detectOutliersIQR(values.filter(v => typeof v === 'number' && !isNaN(v)));
+            if (report) {
+                const examples = report.examples.map(v => v.toLocaleString(undefined, { maximumFractionDigits: 2 })).join(', ');
+                violations.push({ column: col, rule: 'OUTLIER', severity: 'soft', message: `${col}: ${report.count} outlier(s) outside [${report.lowerBound.toFixed(1)}, ${report.upperBound.toFixed(1)}]. Examples: ${examples}` });
             }
         }
 

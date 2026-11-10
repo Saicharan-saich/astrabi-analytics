@@ -181,10 +181,19 @@ export interface OutlierReport {
     lowerBound: number;
     upperBound: number;
     examples: number[];
+    /** Values outside the fences that recur too often to be mistakes (a £12 product among £3 coffees). */
+    exempt: number[];
 }
 
-/** IQR outlier detection (Tukey fences, 1.5×IQR). Returns a FLAG report; the
- *  pipeline surfaces it for review and never deletes or edits the values. */
+/**
+ * IQR outlier detection (Tukey fences, 1.5×IQR). Returns a FLAG report; the
+ * pipeline surfaces it for review and never deletes or edits the values.
+ *
+ * An outlier is a rare value. One that recurs (3 times or more) is a real
+ * level — a price point, a pack size — not a mistake, and when more than 5%
+ * of values (and more than 3) fall outside the fences, the column is just
+ * spread out (several products, several prices): nothing is flagged.
+ */
 export function detectOutliersIQR(values: any[]): OutlierReport | null {
     const nums = values.map(v => (typeof v === 'number' ? v : Number(v))).filter(v => Number.isFinite(v)).sort((a, b) => a - b);
     if (nums.length < 12) return null; // too few points for a stable quartile
@@ -195,10 +204,15 @@ export function detectOutliersIQR(values: any[]): OutlierReport | null {
     const q1 = q(0.25), q3 = q(0.75), iqr = q3 - q1;
     if (iqr === 0) return null;
     const lowerBound = q1 - 1.5 * iqr, upperBound = q3 + 1.5 * iqr;
-    const outliers = nums.filter(v => v < lowerBound || v > upperBound);
-    if (outliers.length === 0) return null;
+    const counts = new Map<number, number>();
+    for (const v of nums) counts.set(v, (counts.get(v) || 0) + 1);
+    const common = 3;
+    const outside = nums.filter(v => v < lowerBound || v > upperBound);
+    const exempt = [...new Set(outside.filter(v => counts.get(v)! >= common))];
+    const outliers = outside.filter(v => counts.get(v)! < common);
+    if (outliers.length === 0 || outliers.length > Math.max(3, nums.length * 0.05)) return null;
     const examples = [...new Set([...outliers.slice(0, 2), ...outliers.slice(-2)])];
-    return { count: outliers.length, lowerBound, upperBound, examples };
+    return { count: outliers.length, lowerBound, upperBound, examples, exempt };
 }
 
 // ════════════════════════════════════════════════════════════════════
