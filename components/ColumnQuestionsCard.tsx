@@ -44,7 +44,7 @@ export function ColumnQuestionsCard({ dataset, onAnswer }: Props) {
                             </div>
                             {m.meaning && <p className="qi-colq-guess">Our guess: {m.meaning}</p>}
                             <div className="qi-colq-answer">
-                                <input type="text" value={draft} placeholder="What it means, e.g. length of stay in days"
+                                <input type="text" value={draft} placeholder={`What ${m.column.replace(/_/g, ' ')} holds, in your own words`}
                                     aria-label={`What ${m.column} means`}
                                     onChange={event => setDrafts(d => ({ ...d, [m.column]: event.target.value }))}
                                     onKeyDown={event => { if (event.key === 'Enter') save(); }} />

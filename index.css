@@ -5621,7 +5621,7 @@ html.dark .qi-guide-mark { color: var(--color-primary); background: color-mix(in
 @media (max-width: 520px) { .qi-builder-start { margin-top: 16px; padding: 20px 16px; } .qi-builder-start-picks button { width: 100%; } }
 
 /* ── Columns that need the user's word ── */
-.qi-colq { padding: 18px 20px; border-left: 3px solid var(--color-warning, #d97706); }
+.qi-ws-card.qi-colq { padding: 18px 20px; border-left: 3px solid #d97706; }
 .qi-colq-head { display: flex; gap: 12px; align-items: flex-start; }
 .qi-colq-icon { display: inline-flex; flex: none; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent); }
 html.dark .qi-colq-icon { color: #fbbf24; }

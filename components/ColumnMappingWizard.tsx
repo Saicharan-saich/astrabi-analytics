@@ -323,7 +323,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
         updateColumn(colName, { aggregation: next });
     };
 
-    const toCheck = columns.filter(col => (columnConfidences[col.name] ?? 0) < 0.45);
+    const toCheck = columns.filter(col => (columnConfidences[col.name] ?? 0) < 0.45 || (columnSemantics[col.name] && needsWord(col.name, columnSemantics[col.name])));
     const lookRight = columns.length - toCheck.length;
     const ROLE_WORD: Record<string, string> = { METRIC: 'Measure', DIMENSION: 'Dimension', DATE: 'Date', BOOLEAN: 'Yes/No', ID: 'ID', UNKNOWN: 'Unknown' };
     const FILTER_WORD: Record<string, string> = { METRIC: 'Measures', DIMENSION: 'Dimensions', DATE: 'Dates', BOOLEAN: 'Yes/No', ID: 'IDs' };
@@ -372,7 +372,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                     {toCheck.slice(0, 8).map(col => (
                                         <li key={col.name}>
                                             <button type="button" className="qi-ws-link" onClick={() => { setSearchFilter(col.name); setTypeFilter('ALL'); setExpandedCol(col.name); }}>{col.name}</button>
-                                            <span className="qi-ws-muted"> — {columnSemantics[col.name]?.role === ColumnType.ID ? 'may not be an ID' : 'unusual name; confirm its role'}</span>
+                                            <span className="qi-ws-muted"> — {columnSemantics[col.name] && needsWord(col.name, columnSemantics[col.name]) ? 'say what it means' : columnSemantics[col.name]?.role === ColumnType.ID ? 'may not be an ID' : 'unusual name; confirm its role'}</span>
                                         </li>
                                     ))}
                                     {toCheck.length > 8 && <li className="qi-ws-muted">and {toCheck.length - 8} more</li>}
