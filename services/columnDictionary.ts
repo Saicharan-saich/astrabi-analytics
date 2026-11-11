@@ -135,25 +135,27 @@ export const MEANINGS_VERSION = 2;
 // of file again in the session reuses it without another lookup. Holds the
 // AI's reply only: words about columns, never a value from the data.
 const SESSION_KEY = 'QuickInsight-column-context-session-v1';
+// Where browser storage is unavailable (private windows), it is kept in memory for the page instead.
+let sessionMemory: Record<string, unknown> = {};
 function readSession(): Record<string, unknown> {
-    try { return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}') || {}; } catch { return {}; }
+    try { return { ...sessionMemory, ...(JSON.parse(localStorage.getItem(SESSION_KEY) || '{}') || {}) }; } catch { return { ...sessionMemory }; }
 }
 export function sessionColumnContext(columnNames: string[]): unknown | null {
     return readSession()[datasetSignature(columnNames)] ?? null;
 }
 export function keepSessionColumnContext(columnNames: string[], reply: unknown): void {
-    try {
-        const all = readSession();
-        all[datasetSignature(columnNames)] = reply;
-        // Newest 40 kinds of file: enough for a session, small enough for storage.
-        const keys = Object.keys(all);
-        for (const key of keys.slice(0, Math.max(0, keys.length - 40))) delete all[key];
-        localStorage.setItem(SESSION_KEY, JSON.stringify(all));
-    } catch { /* storage unavailable: the meanings still apply to the open dataset */ }
+    const all = readSession();
+    all[datasetSignature(columnNames)] = reply;
+    // Newest 40 kinds of file: enough for a session, small enough for storage.
+    const keys = Object.keys(all);
+    for (const key of keys.slice(0, Math.max(0, keys.length - 40))) delete all[key];
+    sessionMemory = all;
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(all)); } catch { /* kept in memory for this page */ }
 }
 /** Called at logout: what was found online is not kept past the session. */
 export function clearSessionColumnContext(): void {
-    try { localStorage.removeItem(SESSION_KEY); } catch { /* nothing to clear */ }
+    sessionMemory = {};
+    try { localStorage.removeItem(SESSION_KEY); } catch { /* nothing stored */ }
 }
 
 const MEANINGS_KEY = 'QuickInsight-column-meanings-v1';
