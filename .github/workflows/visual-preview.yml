@@ -32,7 +32,11 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: |
+          # The system libraries come from Ubuntu's package servers. When those
+          # cannot be reached, install the browser alone: the runner image
+          # already carries the libraries Chromium needs.
+          timeout 150 npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Capture screenshots
         run: npx playwright test -c playwright.visual.config.ts ${{ github.event.inputs.grep && format('--grep "{0}"', github.event.inputs.grep) || '' }}
         continue-on-error: true

@@ -83,7 +83,11 @@ jobs:
       # config falls back to Playwright's own browser resolution when the
       # sandbox path /opt/pw-browsers is absent, so this Just Works on CI.
       - name: Install Chromium for Playwright
-        run: npx playwright install --with-deps chromium
+        run: |
+          # The system libraries come from Ubuntu's package servers. When those
+          # cannot be reached, install the browser alone: the runner image
+          # already carries the libraries Chromium needs.
+          timeout 150 npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Smoke tests
         run: npm run test:e2e
       - name: Upload report on failure
