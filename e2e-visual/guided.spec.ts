@@ -173,6 +173,8 @@ for (const theme of ['light', 'dark'] as const) {
 
         await page.getByRole('tab', { name: 'Columns', exact: true }).click();
         await expect(page.locator('.qi-meanings-about')).toContainText('Column meanings checked online');
+        // Settled online, so only the internal code is still badged.
+        await expect(page.locator('.qi-needs-word')).toHaveCount(1);
         // Open the column by its name (the middle of the row is the role picker).
         await page.locator('.qi-ws-row', { hasText: /^los/i }).first().getByText(/^los$/i).click();
         await expect(page.locator('.qi-checked-online').first()).toBeVisible({ timeout: 15000 });

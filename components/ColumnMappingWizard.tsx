@@ -14,6 +14,8 @@ import { inferRowGrain } from '../services/rowGrainInference';
 /** A column whose meaning is only a guess until the user says what it is. */
 const needsWord = (name: string, sem: ColumnSemantic) => {
     if (sem.meaningSource === 'user' && (sem.description || '').trim()) return false;
+    // Settled by the online check: one reading that fits this kind of file.
+    if (sem.meaningCheckedOnline && sem.meaningSure === true && (sem.description || '').trim()) return false;
     return sem.meaningSure === false || unclearName(name);
 };
 
