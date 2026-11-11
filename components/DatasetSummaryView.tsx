@@ -7,6 +7,7 @@ import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { CleaningChangesPanel } from './CleaningChangesPanel';
 import { DataKindNote } from './DataKindNote';
 import { WeeklyBriefingCard } from './WeeklyBriefingCard';
+import { ColumnQuestionsCard } from './ColumnQuestionsCard';
 import { CleaningRulesPanel } from './CleaningRulesPanel';
 import { DataExplorerView } from './DataExplorerView';
 import { ETLView } from './ETLView';
@@ -388,6 +389,23 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                                     </button>
                                 </div>
                             </nav>
+
+                            <ColumnQuestionsCard dataset={dataset} onAnswer={(column, meaning) => {
+                                const base = profile || dataset.domainProfile;
+                                const current = base?.columnSemantics?.[column];
+                                const type = dataset.columns.find(c => c.name === column)?.type || ColumnType.DIMENSION;
+                                const next: DatasetDomainProfile = {
+                                    ...(base || { domain: 'General', summary: '', confidence: 0, detectedAt: Date.now() } as DatasetDomainProfile),
+                                    columnSemantics: {
+                                        ...(base?.columnSemantics || {}),
+                                        [column]: {
+                                            ...(current || { role: type, aggregation: type === ColumnType.METRIC ? 'SUM' : 'NONE', format: 'raw', humanLabel: column.replace(/_/g, ' '), isHidden: false }),
+                                            description: meaning, meaningSource: 'user', meaningSure: true,
+                                        } as any,
+                                    },
+                                };
+                                onApplyMapping?.(next, {});
+                            }} />
 
                             <WeeklyBriefingCard dataset={dataset} onAsk={onAskAiSql} />
 

@@ -5,7 +5,7 @@
  * not from rules written for one kind of file.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { columnDictionary, dictionaryForPrompt, dictionaryRequest, applyDictionary, rememberMeanings, rememberedMeanings, goodDirectionOf } from '../services/columnDictionary';
+import { columnDictionary, dictionaryForPrompt, dictionaryRequest, applyDictionary, rememberMeanings, rememberedMeanings, goodDirectionOf, unclearName, columnsNeedingWord } from '../services/columnDictionary';
 import { judgedAgainstMeaning } from '../services/ai-sql/readingCheck';
 import { numberShape, dateSpan, buildMaskedProfiles, profilesToPromptText } from '../services/dataMasker';
 import { describeData } from '../services/ai-sql/leanPipeline';
@@ -103,5 +103,49 @@ describe('what the upload profiler sends', () => {
         const text = profilesToPromptText(buildMaskedProfiles(clinic.rows, clinic.columns as any));
         expect(text).not.toMatch(/Range:|Mean:|2026-01/);
         expect(text).toMatch(/Numbers: /);
+    });
+});
+
+describe('columns whose meaning is only a guess', () => {
+    const ward = ds('ward.csv', [['admitted', T], ['ward', D], ['LOS', M], ['bucket', D], ['type_b', M], ['readmissions', M]],
+        i => ({ admitted: day(i % 30), ward: `W${i % 3}`, LOS: 1 + (i % 9), bucket: ['A', 'B', 'C'][i % 3], type_b: i % 4, readmissions: i % 2 }));
+
+    it('flags abbreviations and internal codes, and trusts common names', () => {
+        for (const name of ['LOS', 'OEE', 'Adj', 'var2', 'Bucket', 'amount_2', 'los_ald', 'x', 'type_b', 'group_a']) expect(unclearName(name), name).toBe(true);
+        for (const name of ['dept', 'qty', 'sku', 'VAT', 'mrr', 'revenue', 'budgeted_amount', 'variance_pct', 'transaction_id', 'ord_no', 'cust_id', 'los_hrs', 'net_sales', 'segment', 'customer_email']) expect(unclearName(name), name).toBe(false);
+    });
+
+    it('asks the user about those columns only, and tells the AI they are not confirmed', () => {
+        expect(columnsNeedingWord(ward).map(m => m.column).sort()).toEqual(['LOS', 'bucket', 'type_b']);
+        const prompt = dictionaryForPrompt(ward);
+        expect(prompt).toMatch(/"LOS": NOT CONFIRMED/);
+        expect(prompt).not.toMatch(/"readmissions": NOT CONFIRMED/);
+    });
+
+    it('an AI that is unsure adds a question; an AI that is sure does not clear a vague name', () => {
+        const applied = applyDictionary({ domain: 'Healthcare', summary: '', confidence: 1, detectedAt: 0, columnSemantics: {} } as any, { columns: {
+            readmissions: { sure: false, question: 'Is this a count of readmissions or a yes/no flag?' },
+            LOS: { sure: true, meaning: 'Length of stay in days.' },
+        } }, ward);
+        const next = { ...ward, domainProfile: applied } as Dataset;
+        const open = columnsNeedingWord(next);
+        expect(open.map(m => m.column)).toContain('readmissions');
+        expect(open.find(m => m.column === 'readmissions')?.question).toBe('Is this a count of readmissions or a yes/no flag?');
+        expect(open.map(m => m.column)).toContain('LOS');
+    });
+
+    it("the user's answer clears the flag and is remembered for the same kind of file", () => {
+        const semantics = { LOS: { role: M, aggregation: 'AVG', format: 'raw', humanLabel: 'LOS', isHidden: false, description: 'Length of stay in days', meaningSource: 'user', meaningSure: true } } as any;
+        const answered = { ...ward, domainProfile: { domain: 'Healthcare', summary: '', confidence: 1, detectedAt: 0, columnSemantics: semantics } } as unknown as Dataset;
+        expect(columnsNeedingWord(answered).map(m => m.column)).not.toContain('LOS');
+        expect(dictionaryForPrompt(answered)).toMatch(/"LOS": Length of stay in days/);
+        rememberMeanings(ward.columns.map(c => c.name), semantics);
+        expect(columnsNeedingWord(ward).map(m => m.column)).not.toContain('LOS');
+    });
+
+    it('a direction alone does not count as saying what the column means', () => {
+        const semantics = { bucket: { role: D, aggregation: 'NONE', format: 'raw', humanLabel: 'bucket', isHidden: false, goodDirection: 'higher', meaningSource: 'user' } } as any;
+        const set = { ...ward, domainProfile: { domain: 'General', summary: '', confidence: 1, detectedAt: 0, columnSemantics: semantics } } as unknown as Dataset;
+        expect(columnsNeedingWord(set).map(m => m.column)).toContain('bucket');
     });
 });

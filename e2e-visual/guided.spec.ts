@@ -81,3 +81,43 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `64-builder-starter-result-${theme}`);
     });
 }
+
+/** A ward's file with an abbreviation (LOS) and an internal code (Bucket): those two ask, the rest are trusted. */
+function wardCsv(): Buffer {
+    const lines = ['Admitted,Ward,LOS,Bucket,Readmissions'];
+    for (let i = 0; i < 90; i++) lines.push(`2026-0${1 + (i % 6)}-${String(1 + (i % 27)).padStart(2, '0')},${['Oak', 'Elm', 'Ash'][i % 3]},${1 + (i % 9)},${['A', 'B', 'C'][i % 3]},${i % 2}`);
+    return Buffer.from(lines.join('\n'));
+}
+
+for (const theme of ['light', 'dark'] as const) {
+    test(`unclear columns ask the user ${theme}`, async ({ page }) => {
+        test.setTimeout(150_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'DASHBOARD');
+        await go(page, 'Data Source');
+        await page.locator('input[type="file"][accept=".csv,.xlsx,.xls"]').first().setInputFiles({ name: 'ward_stays.csv', mimeType: 'text/csv', buffer: wardCsv() });
+        const ready = page.getByRole('dialog', { name: /ready for analysis/ });
+        await ready.waitFor({ timeout: 90000 });
+        await ready.getByRole('button', { name: 'Close' }).click();
+        await page.getByRole('tab', { name: 'Overview', exact: true }).click().catch(() => {});
+
+        const card = page.locator('.qi-colq');
+        await expect(card).toBeVisible({ timeout: 20000 });
+        await expect(card).toContainText('2 columns need your word');
+        await expect(card).toContainText(/\blos\b/i);
+        await expect(card).toContainText(/bucket/i);
+        await expect(card).not.toContainText(/readmissions/i);
+        await card.scrollIntoViewIfNeeded();
+        await shoot(page, `66-columns-need-word-${theme}`);
+
+        await card.getByLabel(/^What los means$/i).fill('Length of stay in days');
+        await card.getByRole('button', { name: 'Save', exact: true }).first().click();
+        await expect(card).toContainText('One column needs your word');
+        await expect(card.locator('code')).not.toContainText(/^los$/i);
+
+        // The answer shows as the user's own in the column settings.
+        await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+        await expect(page.locator('.qi-needs-word').first()).toBeVisible({ timeout: 15000 });
+        await shoot(page, `67-needs-word-badge-${theme}`);
+    });
+}

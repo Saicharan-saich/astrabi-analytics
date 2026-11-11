@@ -3,13 +3,19 @@ import {
     CheckCircle2, Eye, EyeOff, AlertTriangle, RotateCcw, Search, ChevronDown, XCircle,
 } from 'lucide-react';
 import { DatasetDomainProfile, ColumnSemantic, ColumnType, ColumnDefinition } from '../types';
-import { nameDirection } from '../services/columnDictionary';
+import { nameDirection, unclearName } from '../services/columnDictionary';
 import { inferDefaultAggregationForGrain } from '../services/smartAggregation';
 import { inferRowGrain } from '../services/rowGrainInference';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
+
+/** A column whose meaning is only a guess until the user says what it is. */
+const needsWord = (name: string, sem: ColumnSemantic) => {
+    if (sem.meaningSource === 'user' && (sem.description || '').trim()) return false;
+    return sem.meaningSure === false || unclearName(name);
+};
 
 const ALL_DOMAINS = [
     'Sales', 'HR', 'Finance', 'Healthcare', 'Inventory', 'SaaS',
@@ -439,6 +445,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                 <ChevronDown className={`qi-ws-muted w-3.5 h-3.5 shrink-0 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
                                                 <div className="min-w-0">
                                                     <p className="qi-ws-strong text-[13px] font-medium truncate">{col.name}</p>
+                                                    {needsWord(col.name, sem) && <span className="qi-needs-word" title="This name could mean different things. Say what it means under the column so answers don't guess.">Needs your word</span>}
                                                     {sem.humanLabel && sem.humanLabel.toLowerCase().replace(/\s+/g, '_') !== col.name.toLowerCase() && (
                                                         <p className="qi-ws-muted text-[11.5px] truncate">{sem.humanLabel}</p>
                                                     )}
@@ -505,7 +512,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                     <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Display name</span>
                                                         <input type="text" value={sem.humanLabel} onChange={e => updateColumn(col.name, { humanLabel: e.target.value })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
                                                     </label>
-                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">What it means</span>
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">What it means{needsWord(col.name, sem) ? ' (needs your word)' : ''}</span>
                                                         <input type="text" value={sem.description} onChange={e => updateColumn(col.name, { description: e.target.value, meaningSource: 'user' })} placeholder="What does this column hold?" className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
                                                     </label>
                                                 </div>

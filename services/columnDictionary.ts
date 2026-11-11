@@ -36,6 +36,10 @@ export interface ColumnMeaning {
     negative?: string;
     words: string[];
     source: 'rules' | 'ai' | 'user';
+    /** False when the meaning is a guess the user should confirm (an abbreviation, an internal code). */
+    sure: boolean;
+    /** What to ask the user when it is not sure. */
+    question?: string;
 }
 
 const tokens = (name: string) => name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -75,7 +79,47 @@ function ruleMeaning(name: string, role: ColumnType, inShape: { amounts: Set<str
         negative: f && /difference|change|margin/.test(f.kind) ? `${f.b.replace(/_/g, ' ')} is higher than ${f.a.replace(/_/g, ' ')}` : undefined,
         words: [],
         source: 'rules',
+        sure: !unclearName(name),
     };
+}
+
+/**
+ * Short names everyone in business reads the same way: trusted as they are.
+ * Anything else this short ("LOS", "OEE", "Adj", "Var2") is a guess until the
+ * user says what it means — the same letters mean different things in a
+ * hospital and a call centre.
+ */
+const COMMON_SHORT = new Set(['id', 'qty', 'sku', 'vat', 'tax', 'mrr', 'arr', 'nps', 'csat', 'cogs', 'roi', 'kpi', 'eta', 'pct', 'amt', 'avg', 'url', 'utm', 'dob', 'age', 'sex', 'zip', 'city', 'name', 'date', 'time', 'year', 'week', 'day', 'month', 'cost', 'cash', 'card', 'paid', 'net', 'gross', 'total', 'price', 'sales', 'units', 'type', 'size', 'item', 'shop', 'store', 'site', 'team', 'role', 'plan', 'tier', 'note', 'notes', 'email', 'phone', 'status', 'region', 'brand', 'stock', 'unit', 'rate', 'fee', 'fees', 'tip', 'tips', 'gbp', 'usd', 'eur', 'uk', 'us', 'eu', 'hr', 'it', 'pos', 'crm', 'b2b', 'b2c', 'ytd', 'mtd', 'qtd', 'yoy', 'mom', 'aov', 'ltv', 'cac', 'cpc', 'cpm', 'ctr', 'gmv', 'ebitda', 'p&l', 'pnl', 'wip', 'fte', 'kg', 'km', 'mins', 'hrs', 'dept', 'cust', 'prod', 'emp', 'mgr', 'inv', 'acct', 'txn', 'trans', 'desc', 'loc', 'addr', 'bal', 'rev', 'disc', 'ship', 'ord', 'num', 'no', 'nbr', 'cnt', 'ttl', 'qty', 'sms', 'vip', 'api', 'gst', 'hst', 'pst', 'ein', 'vin', 'imei', 'ip', 'os', 'ux', 'ui', 'cv', 'en', 'fr', 'de', 'at', 'on', 'by', 'of', 'per', 'to', 'from', 'in', 'out', 'is', 'has', 'new', 'old', 'max', 'min', 'sum', 'mean', 'end', 'start', 'open', 'zone', 'code_no',
+    // Everyday short words (not abbreviations): a name made of these says what it is.
+    'bed', 'car', 'van', 'bus', 'job', 'pay', 'bar', 'cup', 'box', 'bag', 'kit', 'pet', 'art', 'ad', 'ads', 'app', 'web', 'map', 'lot', 'row', 'use', 'run', 'win', 'won', 'bid', 'buy', 'log', 'tv', 'pc', 'all', 'any', 'tea', 'gas', 'oil', 'fuel', 'food', 'meal', 'dish', 'menu', 'room', 'desk', 'ward', 'area', 'wage', 'sale', 'deal', 'lead', 'risk', 'task', 'goal', 'step', 'page', 'view', 'hour', 'bill', 'debt', 'loan', 'rent', 'gift', 'game', 'file', 'stay', 'trip', 'seat', 'shift', 'call', 'mail', 'post', 'text', 'tag', 'tags', 'link', 'user', 'list', 'cart', 'pack', 'case', 'part', 'tool', 'cat', 'fit', 'tax', 'due', 'won', 'lost', 'sold', 'kept', 'left', 'paid', 'owed', 'gain', 'loss', 'wait', 'late', 'miss', 'hit', 'yes', 'flag_yes']);
+/** Names that say nothing on their own: an internal grouping or a code only the business knows. */
+const VAGUE_NAME = /^(bucket|flag|code|class|grp|cat|misc|other|adj|adjustment|val|value|field|col|column|data|info|x|y|z|ref|key|band|indicator|ind|marker|bin|mode|kind)$/;
+
+/** Is this column's name too unclear to trust a guess about it? */
+export function unclearName(name: string): boolean {
+    const parts = tokens(name);
+    if (!parts.length) return true;
+    // A copy or a numbered field ("var2", "amount_2", "field_7") — which one is it?
+    if (/^(field|col|column|unnamed|var|value|val|amount|x|data)_?\d+$/i.test(name.replace(/\s+/g, '_'))) return true;
+    // An internal letter code ("type_b", "group_a"): which one is it, and what is it?
+    if (parts.length > 1 && /^[a-z]$/.test(parts[parts.length - 1]) && !/^(x|y|z)$/.test(parts[parts.length - 1])) return true;
+    // As written: "LOS" in capitals is an acronym; "ward" is a word.
+    const written = name.split(/[^A-Za-z0-9]+/).filter(Boolean);
+    const acronym = (part: string, i: number) => {
+        const word = part.replace(/\d+$/, '');
+        if (!word || /^\d+$/.test(part) || COMMON_SHORT.has(word)) return false;
+        if (word.length <= 3) return true;
+        // Four letters: an acronym when written in capitals or with no vowel ("OPEX", "lnth").
+        const raw = (written[i] || '').replace(/\d+$/, '');
+        return word.length === 4 && (raw === raw.toUpperCase() && /[A-Z]/.test(raw) || !/[aeiouy]/.test(word));
+    };
+    if (parts.length === 1) {
+        const word = parts[0].replace(/\d+$/, '');
+        if (VAGUE_NAME.test(word)) return true;
+        return acronym(parts[0], 0);
+    }
+    // Every word is an unknown abbreviation ("los_hrs" is fine because "hrs" is known; "los_ald" is not).
+    return parts.every((part, i) => acronym(part, i));
 }
 
 const currencySymbol = (code: string) => ({ GBP: '£', USD: '$', EUR: '€', INR: '₹', JPY: '¥' } as Record<string, string>)[code] || code;
@@ -133,17 +177,24 @@ export function columnDictionary(dataset: Dataset): ColumnMeaning[] {
             negative: said.negativeMeans || base.negative,
             words: [...new Set([...(said.aliases || [])].map(w => w.trim()).filter(Boolean))].slice(0, 8),
             source,
+            // The user's word settles it; otherwise either the AI or the name can say it is a guess.
+            // (A direction alone does not say what the column is: the user has to say what it means.)
+            sure: said.meaningSource === 'user' && (said.description?.trim() || said.meaningSure) ? true : said.meaningSure === false ? false : base.sure,
+            question: said.meaningQuestion || `What does "${column.name.replace(/_/g, ' ')}" mean in your file?`,
         } as ColumnMeaning;
     }).filter((m): m is ColumnMeaning => Boolean(m));
 }
 
 /** The dictionary as the AI reads it with every question: words about columns, never values. */
 export function dictionaryForPrompt(dataset: Dataset): string {
-    const entries = columnDictionary(dataset).filter(m => m.meaning || m.good || m.negative || m.words.length || m.formula);
+    const entries = columnDictionary(dataset).filter(m => !m.sure || m.meaning || m.good || m.negative || m.words.length || m.formula);
     if (!entries.length) return '';
     const q = (name: string) => `"${name.replace(/"/g, '""')}"`;
     const lines = entries.map(m => {
         const parts: string[] = [];
+        if (!m.sure) {
+            return `- ${q(m.column)}: NOT CONFIRMED${m.meaning ? ` (a guess: ${m.meaning.replace(/\.$/, '')})` : ''}. If a question depends on what this column means, ask (clarify) instead of assuming.`;
+        }
         if (m.meaning) parts.push(m.meaning.replace(/\.$/, ''));
         if (m.unit) parts.push(`in ${m.unit}`);
         if (m.good === 'higher') parts.push('higher is better');
@@ -172,8 +223,10 @@ For every column, say in plain words for a small-business owner:
 - "good": "higher" if more is better for the business, "lower" if more is worse (costs, complaints, waiting, overspend), "neutral" if neither (a category, an ID, a date, a plan figure on its own). For a difference worked out between an actual and a plan, decide from the formula which way is good: for money spent, more spending than planned is worse; for money earned, earning less than planned is worse. If you cannot tell whether the amounts are money spent or earned, use "neutral".
 - "negative": for numbers that can be below 0, what that means in words ("spent more than budgeted"); otherwise omit.
 - "words": up to 5 everyday words or phrases people use when they ask about it ("over budget", "losses", "late deliveries"); for categories, what one value is called ("department").
+- "sure": true when the name means one thing to anyone in business (revenue, quantity, order date, VAT, MRR). false when it is an abbreviation with several meanings (LOS is length of stay in a hospital and level of service elsewhere), an internal code or grouping (Bucket, Type B, Adj), a numbered or copied field (Var2), or a figure whose meaning depends on how this business works. Do not mark common names unsure.
+- "question": only when "sure" is false, one short plain question to ask the owner ("What does LOS mean in your file: length of stay, or something else?").
 Keep "good" as given where it says (already known).
-Return ONLY JSON: {"columns":{"column_name":{"meaning":"...","good":"higher|lower|neutral","negative":"...","words":["..."]}}}`;
+Return ONLY JSON: {"columns":{"column_name":{"meaning":"...","good":"higher|lower|neutral","negative":"...","words":["..."],"sure":true,"question":"..."}}}`;
 }
 
 /** Merge the AI's meanings into the profile, never over the user's. */
@@ -197,6 +250,8 @@ export function applyDictionary(profile: DatasetDomainProfile, reply: unknown, d
             goodDirection: good || current.goodDirection,
             negativeMeans: typeof said.negative === 'string' && said.negative.trim() ? said.negative.trim().slice(0, 120) : current.negativeMeans,
             aliases: Array.isArray(said.words) ? said.words.map(String).map((w: string) => w.trim()).filter(Boolean).slice(0, 5) : current.aliases,
+            meaningSure: said.sure === false ? false : said.sure === true ? true : current.meaningSure,
+            meaningQuestion: said.sure === false && typeof said.question === 'string' && said.question.trim() ? said.question.trim().slice(0, 160) : current.meaningQuestion,
             meaningSource: 'ai',
         };
     }
@@ -206,4 +261,9 @@ export function applyDictionary(profile: DatasetDomainProfile, reply: unknown, d
 /** Which way is good for a column, as the dictionary says (undefined when nobody knows). */
 export function goodDirectionOf(dataset: Dataset, column: string): ColumnMeaning['good'] {
     return columnDictionary(dataset).find(m => m.column === column)?.good;
+}
+
+/** Columns whose meaning is a guess and that nobody has explained yet: what to ask the user. */
+export function columnsNeedingWord(dataset: Dataset): ColumnMeaning[] {
+    return columnDictionary(dataset).filter(m => !m.sure && m.combine !== 'date');
 }

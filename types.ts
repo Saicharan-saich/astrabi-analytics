@@ -168,6 +168,10 @@ export interface ColumnSemantic {
   unit?: string;
   /** Who said so last: worked out by rules, written by the AI, or set by the user (wins). */
   meaningSource?: 'rules' | 'ai' | 'user';
+  /** False when the meaning is a guess (an abbreviation like "LOS", an internal code): the user is asked. */
+  meaningSure?: boolean;
+  /** The plain question to ask the user about it ("What does LOS mean in your file?"). */
+  meaningQuestion?: string;
 }
 
 export interface MaskedColumnProfile {
