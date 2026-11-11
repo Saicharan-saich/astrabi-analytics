@@ -498,17 +498,16 @@ function App() {
   // The meanings are checked online once per dataset per session: a dataset
   // whose check is from an earlier session (nothing kept for it any more) is
   // checked again; what was found is reused for the same kind of file.
+  // The reply is kept per dataset, so if the profile is replaced afterwards
+  // (the subject is detected a moment later, a mapping is re-applied) the
+  // meanings are written onto the new profile without asking again.
   const meaningsRequested = useRef<Set<string>>(new Set());
+  const meaningsFound = useRef<Map<string, unknown>>(new Map());
   useEffect(() => {
     if (!dataset || isAIProfiling) return;
-    const checkedThisSession = (dataset.domainProfile?.meaningsVersion || 0) >= MEANINGS_VERSION
-      && Boolean(sessionColumnContext(dataset.columns.map(c => c.name)));
-    if (checkedThisSession) return;
     const key = dataset.id;
-    if (meaningsRequested.current.has(key)) return;
-    meaningsRequested.current.add(key);
-    askColumnMeanings(dataset).then(reply => {
-      if (!reply) return;
+    const version = dataset.domainProfile?.meaningsVersion || 0;
+    const write = (reply: unknown) => {
       const current = useAppStore.getState().dataset;
       if (!current || current.id !== key) return;
       const updated = { ...current, domainProfile: applyDictionary(current.domainProfile || blankProfile(), reply, current) };
@@ -516,6 +515,21 @@ function App() {
       saveDatasetToDB(updated);
       // The column settings show the same meanings (the user's own edits are never overwritten).
       setPendingProfile((pending: any) => pending ? applyDictionary(pending, reply, current) : pending);
+    };
+    // Found this session (for this dataset or the same kind of file): write it if the profile lacks it.
+    const found = meaningsFound.current.get(key) ?? sessionColumnContext(dataset.columns.map(c => c.name));
+    if (found) {
+      const online = (found as any)?.checkedOnline === true;
+      if (version < (online ? MEANINGS_VERSION : 1)) write(found);
+      // A reply that could not be checked online is tried again in the next session, not on every change.
+      if (online || meaningsRequested.current.has(key)) return;
+    }
+    if (meaningsRequested.current.has(key)) return;
+    meaningsRequested.current.add(key);
+    askColumnMeanings(dataset).then(reply => {
+      if (!reply) return;
+      meaningsFound.current.set(key, reply);
+      write(reply);
     });
   }, [dataset?.id, dataset?.domainProfile?.meaningsVersion, isAIProfiling]);
 
