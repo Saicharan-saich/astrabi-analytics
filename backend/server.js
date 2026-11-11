@@ -20,7 +20,11 @@ const {
     createConnectionId,
     validateLlmRequest,
     validatePort,
+    webSearchEnabled,
 } = require('./security');
+
+/** Online column checks a user may run per day (one per dataset opened in a session). */
+const WEB_CHECK_DAILY_LIMIT = Math.max(1, Number(process.env.LLM_WEB_CHECK_DAILY_LIMIT) || 40);
 const { parseProviderError } = require('./llmProviderError');
 const {
     AI_SQL_CONVERSATION_MAX_TOKENS,
@@ -1624,7 +1628,7 @@ async function checkAIQuota(userId, options = {}) {
         const limit = Number.isFinite(limitOverride) && limitOverride > 0
             ? Math.floor(limitOverride)
             : (user.daily_ai_limit || 50);
-        const quotaLabel = action === 'ai_benchmark_query' ? 'Daily admin benchmark AI limit' : 'Daily AI limit';
+        const quotaLabel = action === 'ai_benchmark_query' ? 'Daily admin benchmark AI limit' : action === 'ai_web_check' ? 'Daily online column check limit' : 'Daily AI limit';
         if (used >= limit) return { allowed: false, reason: `${quotaLabel} reached (${limit}/day). Contact admin.`, used, limit };
         return { allowed: true, remaining: limit - used, used, limit };
     } catch (err) {
@@ -1800,7 +1804,13 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
 
     const user = req.authUser;
     const isBenchmark = isAdminBenchmarkRequest(req);
-    const usageAction = isBenchmark ? 'ai_benchmark_query' : 'ai_query';
+    // Checking column meanings online happens once per dataset at upload. It
+    // has its own daily allowance so it never uses up the user's questions.
+    const isWebCheck = !isBenchmark && req.body?.web_search === true;
+    if (isWebCheck && !webSearchEnabled()) {
+        return res.status(400).json({ success: false, error: 'Online checks are switched off', webSearchOff: true });
+    }
+    const usageAction = isBenchmark ? 'ai_benchmark_query' : isWebCheck ? 'ai_web_check' : 'ai_query';
 
     // Benchmark calls are isolated from the normal per-user allowance. Only a
     // currently authenticated database admin can request this audited budget.
@@ -1809,6 +1819,7 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
         // Admin benchmark runs are audited research workloads and may use
         // several model calls per case. Do not interrupt them with a daily cap.
         unlimited: isBenchmark,
+        ...(isWebCheck ? { limitOverride: WEB_CHECK_DAILY_LIMIT } : {}),
     });
     if (!quota.allowed) {
         return res.status(429).json({ success: false, error: quota.reason, quotaExceeded: true });
@@ -1822,7 +1833,7 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
         if (!validated.valid) {
             return res.status(400).json({ success: false, error: validated.error });
         }
-        const { model, messages, max_tokens, temperature } = validated.value;
+        const { model, messages, max_tokens, temperature, web_search } = validated.value;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -1836,7 +1847,10 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
                 model,
                 messages,
                 max_tokens,
-                temperature
+                temperature,
+                // The model searches the web itself (the provider's own search
+                // where it has one) and cites what it used.
+                ...(web_search ? { plugins: [{ id: 'web', max_results: 5 }] } : {})
             })
         });
 
@@ -1865,7 +1879,7 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
             usageAction,
             tokensUsed,
             model,
-            `${isBenchmark ? 'purpose:benchmark;' : ''}tokens:${tokensUsed}`
+            `${isBenchmark ? 'purpose:benchmark;' : ''}${web_search ? 'purpose:column-web-check;' : ''}tokens:${tokensUsed}`
         );
         const remainingToday = quota.unlimited ? 'unlimited' : quota.remaining - 1;
         console.log(`[LLM] User ${user.email} — ${tokensUsed} tokens (${remainingToday} remaining today)`);
@@ -1875,7 +1889,7 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
             remaining: quota.unlimited ? null : quota.remaining - 1,
             limit: quota.limit,
             used: (quota.used || 0) + 1,
-            scope: isBenchmark ? 'admin_benchmark' : 'standard',
+            scope: isBenchmark ? 'admin_benchmark' : isWebCheck ? 'web_check' : 'standard',
             unlimited: quota.unlimited === true,
         };
         res.json(data);

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
-    CheckCircle2, Eye, EyeOff, AlertTriangle, RotateCcw, Search, ChevronDown, XCircle,
+    CheckCircle2, Eye, EyeOff, AlertTriangle, RotateCcw, Search, ChevronDown, XCircle, Globe,
 } from 'lucide-react';
 import { DatasetDomainProfile, ColumnSemantic, ColumnType, ColumnDefinition } from '../types';
 import { nameDirection, unclearName } from '../services/columnDictionary';
@@ -348,6 +348,12 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             {/* ── Body ── */}
             <div className="flex-1 overflow-y-auto">
                 <div className="px-5 py-4 space-y-4">
+                    {initialProfile.meaningsCheckedOnline && (
+                        <p className="qi-meanings-about">
+                            <Globe className="h-3.5 w-3.5" aria-hidden />
+                            <span><strong>Column meanings checked online.</strong> {initialProfile.meaningsAbout ? `${initialProfile.meaningsAbout.replace(/\.$/, '')}. ` : ''}Only the column names and how they are worked out were looked up, never your values. Kept on this device until you log out.</span>
+                        </p>
+                    )}
                     {/* Summary: subject · how many columns look right */}
                     <div className="qi-ws-subcard qi-ws-facts rounded-lg grid grid-cols-1 md:grid-cols-2">
                         <div className="px-4 py-3">
@@ -533,7 +539,11 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                         <input type="text" value={(sem.aliases || []).join(', ')} onChange={e => updateColumn(col.name, { aliases: e.target.value.split(/,\s*/), meaningSource: 'user' })} placeholder="e.g. over budget, losses" className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
                                                     </label>
                                                 </div>
-                                                <p className="qi-ws-muted text-[11.5px] mt-2">{sem.meaningSource === 'user' ? 'Set by you: used for every question and remembered for this kind of file.' : sem.meaningSource === 'ai' ? 'Written from the column names only (never your values). Correct anything that is wrong; your words are used from then on.' : 'Worked out from the column name and how it is calculated. Correct anything that is wrong.'}</p>
+                                                <p className="qi-ws-muted text-[11.5px] mt-2">{sem.meaningSource === 'user' ? 'Set by you: used for every question and remembered for this kind of file.'
+                                                    : sem.meaningSource === 'ai' && sem.meaningCheckedOnline ? <>
+                                                        <span className="qi-checked-online"><Globe className="h-3 w-3" aria-hidden /> Checked online</span> from the column names only (never your values){sem.meaningSources?.length ? <>, against {sem.meaningSources.map((source, i) => <React.Fragment key={source.url}>{i > 0 && ', '}<a href={source.url} target="_blank" rel="noopener noreferrer nofollow" className="qi-source-link">{source.title}</a></React.Fragment>)}</> : ''}. Correct anything that is wrong; your words are used from then on.</>
+                                                    : sem.meaningSource === 'ai' ? 'Written from the column names only (never your values); not checked online yet. Correct anything that is wrong; your words are used from then on.'
+                                                    : 'Worked out from the column name and how it is calculated. Correct anything that is wrong.'}</p>
                                             </div>
                                         )}
                                     </div>

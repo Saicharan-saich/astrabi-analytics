@@ -172,6 +172,10 @@ export interface ColumnSemantic {
   meaningSure?: boolean;
   /** The plain question to ask the user about it ("What does LOS mean in your file?"). */
   meaningQuestion?: string;
+  /** True when the AI checked this meaning against the web (names and metadata only were looked up). */
+  meaningCheckedOnline?: boolean;
+  /** Where the meaning was checked: up to three pages. */
+  meaningSources?: { title: string; url: string }[];
 }
 
 export interface MaskedColumnProfile {
@@ -201,6 +205,10 @@ export interface DatasetDomainProfile {
   columnSemantics: Record<string, ColumnSemantic>;
   /** Set once the column meanings (direction, words) have been written for this profile. */
   meaningsVersion?: number;
+  /** True when the meanings were checked against the web for this session. */
+  meaningsCheckedOnline?: boolean;
+  /** What kind of file this is, as the online check found ("A Square item sales export"). */
+  meaningsAbout?: string;
   suggestedQuestionCategories?: string[];
   detectedAt: number;            // Timestamp
 }

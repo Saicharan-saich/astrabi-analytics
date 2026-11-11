@@ -480,6 +480,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                         profile ? (
                             <div className="qi-ws-card h-[calc(100vh-15rem)] min-h-[560px] overflow-hidden rounded-xl">
                                 <ColumnMappingWizard
+                                    key={`${dataset.id}:${profile.meaningsVersion || 0}:${profile.meaningsCheckedOnline ? 'online' : 'local'}`}
                                     profile={profile}
                                     columns={dataset.columns}
                                     fileName={dataset.name}

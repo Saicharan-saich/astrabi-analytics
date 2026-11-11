@@ -5643,3 +5643,9 @@ html.dark .qi-colq-icon { color: #fbbf24; }
 @media (max-width: 520px) { .qi-colq { padding: 16px; } .qi-colq-answer button { flex: 1 1 auto; } }
 .qi-needs-word { display: inline-block; margin-top: 2px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #92400e; background: color-mix(in srgb, #d97706 16%, transparent); }
 html.dark .qi-needs-word { color: #fcd34d; }
+.qi-checked-online { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: 999px; font-weight: 600; color: #047857; background: color-mix(in srgb, #10b981 14%, transparent); }
+html.dark .qi-checked-online { color: #6ee7b7; }
+.qi-source-link { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+.qi-meanings-about { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); background: color-mix(in srgb, #10b981 8%, transparent); border: 1px solid color-mix(in srgb, #10b981 28%, transparent); }
+.qi-meanings-about svg { flex: none; margin-top: 2px; color: #059669; }
+html.dark .qi-meanings-about svg { color: #6ee7b7; }

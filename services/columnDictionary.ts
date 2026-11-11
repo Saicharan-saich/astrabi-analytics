@@ -40,6 +40,9 @@ export interface ColumnMeaning {
     sure: boolean;
     /** What to ask the user when it is not sure. */
     question?: string;
+    /** Checked against the web by the AI (from the column names and metadata only). */
+    checkedOnline?: boolean;
+    sources?: { title: string; url: string }[];
 }
 
 const tokens = (name: string) => name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -124,6 +127,35 @@ export function unclearName(name: string): boolean {
 
 const currencySymbol = (code: string) => ({ GBP: '£', USD: '$', EUR: '€', INR: '₹', JPY: '¥' } as Record<string, string>)[code] || code;
 
+/** Meanings checked online carry this version; anything lower is checked again. */
+export const MEANINGS_VERSION = 2;
+
+// ── What was found online, kept on this device until the user logs out ──
+// One entry per kind of file (its column names), so uploading the same kind
+// of file again in the session reuses it without another lookup. Holds the
+// AI's reply only: words about columns, never a value from the data.
+const SESSION_KEY = 'QuickInsight-column-context-session-v1';
+function readSession(): Record<string, unknown> {
+    try { return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}') || {}; } catch { return {}; }
+}
+export function sessionColumnContext(columnNames: string[]): unknown | null {
+    return readSession()[datasetSignature(columnNames)] ?? null;
+}
+export function keepSessionColumnContext(columnNames: string[], reply: unknown): void {
+    try {
+        const all = readSession();
+        all[datasetSignature(columnNames)] = reply;
+        // Newest 40 kinds of file: enough for a session, small enough for storage.
+        const keys = Object.keys(all);
+        for (const key of keys.slice(0, Math.max(0, keys.length - 40))) delete all[key];
+        localStorage.setItem(SESSION_KEY, JSON.stringify(all));
+    } catch { /* storage unavailable: the meanings still apply to the open dataset */ }
+}
+/** Called at logout: what was found online is not kept past the session. */
+export function clearSessionColumnContext(): void {
+    try { localStorage.removeItem(SESSION_KEY); } catch { /* nothing to clear */ }
+}
+
 const MEANINGS_KEY = 'QuickInsight-column-meanings-v1';
 type Remembered = Record<string, Record<string, Partial<Pick<ColumnSemantic, 'description' | 'goodDirection' | 'negativeMeans' | 'aliases' | 'unit'>>>>;
 function readRemembered(): Remembered {
@@ -179,7 +211,14 @@ export function columnDictionary(dataset: Dataset): ColumnMeaning[] {
             source,
             // The user's word settles it; otherwise either the AI or the name can say it is a guess.
             // (A direction alone does not say what the column is: the user has to say what it means.)
-            sure: said.meaningSource === 'user' && (said.description?.trim() || said.meaningSure) ? true : said.meaningSure === false ? false : base.sure,
+            // A meaning the AI checked online and found to have one reading in this file's setting
+            // also settles it ("LOS" beside ward and admission columns is length of stay).
+            sure: said.meaningSource === 'user' && (said.description?.trim() || said.meaningSure) ? true
+                : said.meaningSure === false ? false
+                : said.meaningCheckedOnline && said.meaningSure === true && said.description?.trim() ? true
+                : base.sure,
+            checkedOnline: said.meaningSource !== 'user' && said.meaningCheckedOnline === true,
+            sources: said.meaningSource !== 'user' ? said.meaningSources : undefined,
             question: said.meaningQuestion || `What does "${column.name.replace(/_/g, ' ')}" mean in your file?`,
         } as ColumnMeaning;
     }).filter((m): m is ColumnMeaning => Boolean(m));
@@ -207,8 +246,8 @@ export function dictionaryForPrompt(dataset: Dataset): string {
     return `COLUMN MEANINGS (what each column means and which way is good; the user's settings are final):\n${lines.join('\n')}`;
 }
 
-/** The request for the AI to fill the meanings: names, types, roles and formulas only. */
-export function dictionaryRequest(dataset: Dataset): string {
+/** The request for the AI to fill the meanings: names, types, roles and formulas only. With `online`, it checks them against the web. */
+export function dictionaryRequest(dataset: Dataset, options: { online?: boolean } = {}): string {
     const dictionary = columnDictionary(dataset);
     const q = (name: string) => `"${name.replace(/"/g, '""')}"`;
     const lines = dictionary.map(m => `- ${q(m.column)}: ${m.combine}${m.unit ? `, in ${m.unit}` : ''}${m.formula ? `, worked out as ${m.formula}` : ''}${m.good ? `, ${m.good === 'higher' ? 'higher is better' : m.good === 'lower' ? 'higher is worse' : 'no better direction'} (already known)` : ''}`);
@@ -226,12 +265,43 @@ For every column, say in plain words for a small-business owner:
 - "sure": true when the name means one thing to anyone in business (revenue, quantity, order date, VAT, MRR). false when it is an abbreviation with several meanings (LOS is length of stay in a hospital and level of service elsewhere), an internal code or grouping (Bucket, Type B, Adj), a numbered or copied field (Var2), or a figure whose meaning depends on how this business works. Do not mark common names unsure.
 - "question": only when "sure" is false, one short plain question to ask the owner ("What does LOS mean in your file: length of stay, or something else?").
 Keep "good" as given where it says (already known).
-Return ONLY JSON: {"columns":{"column_name":{"meaning":"...","good":"higher|lower|neutral","negative":"...","words":["..."],"sure":true,"question":"..."}}}`;
+${options.online ? `
+CHECK THIS ONLINE before you answer. Search the web to find out:
+1. What kind of file this is: which system, report or industry uses this set of column names together (a till or booking system export, an online shop's order export, an accounting report, a hospital or factory record…). The column names taken together are the best clue.
+2. What each name means in that setting, especially abbreviations, industry terms and metrics, and how each metric is normally worked out and judged (which way is good).
+Use what you find to correct your first reading: a meaning that fits this kind of file beats a general one. Search only with the column names and the kind of file; you have nothing else.
+Add for every column:
+- "checked": true when what you found online supports the meaning, false when you found nothing that settles it.
+- "source": the address (URL) of the page that best supports it, when "checked" is true.
+With "checked" true and one reading that fits this file, "sure" is true even for an abbreviation (LOS beside ward and admission columns is length of stay). Internal codes, numbered or copied fields and names the web cannot settle stay "sure": false with a question.
+Also add "about": one plain sentence on what kind of file this is, as you found.
+Reply with the JSON object only: no notes, no links outside "source".
+Return ONLY JSON: {"about":"...","columns":{"column_name":{"meaning":"...","good":"higher|lower|neutral","negative":"...","words":["..."],"sure":true,"question":"...","checked":true,"source":"https://..."}}}` : `Return ONLY JSON: {"columns":{"column_name":{"meaning":"...","good":"higher|lower|neutral","negative":"...","words":["..."],"sure":true,"question":"..."}}}`}`;
 }
+
+/** A web address worth showing: http(s) only, with a short title from its site name. */
+function sourceOf(url: unknown, titles: Map<string, string>): { title: string; url: string } | null {
+    if (typeof url !== 'string') return null;
+    try {
+        const parsed = new URL(url.trim());
+        if (!/^https?:$/.test(parsed.protocol)) return null;
+        // Tracking added by the search provider is not part of the page.
+        parsed.searchParams.delete('utm_source');
+        const clean = parsed.toString();
+        return { title: (titles.get(clean) || titles.get(url.trim()) || parsed.hostname.replace(/^www\./, '')).slice(0, 90), url: clean };
+    } catch { return null; }
+}
+
+/** Links and citation marks the model may leave inside a sentence are not part of the meaning. */
+const plainSentence = (text: string) => text.replace(/\(\s*\[[^\]]*\]\(https?:[^)]*\)\s*\)/g, '').replace(/\[([^\]]*)\]\((https?:[^)]*)\)/g, '$1').replace(/\(\s*https?:\/\/[^)]*\)/g, '').replace(/【[^】]*】/g, '').replace(/\s{2,}/g, ' ').replace(/\s+([.,;])/g, '$1').trim();
 
 /** Merge the AI's meanings into the profile, never over the user's. */
 export function applyDictionary(profile: DatasetDomainProfile, reply: unknown, dataset: Dataset): DatasetDomainProfile {
     const columns = (reply as any)?.columns && typeof (reply as any).columns === 'object' ? (reply as any).columns : {};
+    // Set by the caller when the reply came from a web-checked request, with the pages the search returned.
+    const online = (reply as any)?.checkedOnline === true;
+    const titles = new Map<string, string>((Array.isArray((reply as any)?.sources) ? (reply as any).sources : [])
+        .filter((s: any) => s && typeof s.url === 'string').map((s: any) => [String(s.url).trim(), String(s.title || '')] as [string, string]).filter(([, title]: [string, string]) => title));
     const semantics: Record<string, ColumnSemantic> = { ...profile.columnSemantics };
     const remembered = rememberedMeanings(dataset.columns.map(c => c.name));
     for (const column of dataset.columns) {
@@ -246,16 +316,20 @@ export function applyDictionary(profile: DatasetDomainProfile, reply: unknown, d
         const good = ['higher', 'lower', 'neutral'].includes(said.good) ? said.good : undefined;
         semantics[column.name] = {
             ...current,
-            description: typeof said.meaning === 'string' && said.meaning.trim() ? said.meaning.trim().slice(0, 200) : current.description,
+            description: typeof said.meaning === 'string' && said.meaning.trim() ? plainSentence(said.meaning).slice(0, 200) : current.description,
             goodDirection: good || current.goodDirection,
             negativeMeans: typeof said.negative === 'string' && said.negative.trim() ? said.negative.trim().slice(0, 120) : current.negativeMeans,
             aliases: Array.isArray(said.words) ? said.words.map(String).map((w: string) => w.trim()).filter(Boolean).slice(0, 5) : current.aliases,
             meaningSure: said.sure === false ? false : said.sure === true ? true : current.meaningSure,
             meaningQuestion: said.sure === false && typeof said.question === 'string' && said.question.trim() ? said.question.trim().slice(0, 160) : current.meaningQuestion,
             meaningSource: 'ai',
+            // Only a reply from a web-checked request can say a meaning was checked online.
+            meaningCheckedOnline: online && said.checked === true,
+            meaningSources: online && said.checked === true ? [sourceOf(said.source, titles)].filter((x): x is { title: string; url: string } => Boolean(x)) : undefined,
         };
     }
-    return { ...profile, columnSemantics: semantics, meaningsVersion: 1 };
+    const about = online && typeof (reply as any)?.about === 'string' ? plainSentence((reply as any).about).slice(0, 220) : undefined;
+    return { ...profile, columnSemantics: semantics, meaningsVersion: online ? MEANINGS_VERSION : 1, meaningsCheckedOnline: online, meaningsAbout: about || (online ? undefined : profile.meaningsAbout) };
 }
 
 /** Which way is good for a column, as the dictionary says (undefined when nobody knows). */

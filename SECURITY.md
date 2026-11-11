@@ -27,6 +27,13 @@ types. Sending sample values is opt-in, requires recorded consent, excludes
 columns detected as identifiers, personal or sensitive, and can be narrowed by
 the user per column and per value.
 
+When a dataset is uploaded or opened, the AI checks what its columns mean
+against the web. That request carries column names, roles and formulas only
+(the backend refuses a web-checked request that is not small plain text), so
+those are all a search can contain. What is found is kept in the browser until
+the user logs out. Set `LLM_WEB_SEARCH=off` on the backend to switch the online
+check off; the AI then answers from what it already knows.
+
 ## Running this safely
 
 The backend refuses to start in production without `JWT_SECRET`. No admin

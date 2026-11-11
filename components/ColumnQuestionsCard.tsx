@@ -29,7 +29,9 @@ export function ColumnQuestionsCard({ dataset, onAnswer }: Props) {
                 <span className="qi-colq-icon" aria-hidden><HelpCircle className="h-4 w-4" /></span>
                 <div>
                     <h2 id="qi-colq-title">{open.length === 1 ? 'One column needs your word' : `${open.length} columns need your word`}</h2>
-                    <p>These names could mean different things, so answers won't guess at them. Say what each one means and every answer will use it.</p>
+                    <p>{dataset.domainProfile?.meaningsCheckedOnline
+                        ? 'We checked every column name online. These ones still could mean different things, so answers won\'t guess at them. Say what each one means and every answer will use it.'
+                        : 'These names could mean different things, so answers won\'t guess at them. Say what each one means and every answer will use it.'}</p>
                 </div>
             </header>
             <ul className="qi-colq-list">
@@ -42,7 +44,7 @@ export function ColumnQuestionsCard({ dataset, onAnswer }: Props) {
                                 <code>{m.column}</code>
                                 <span>{m.question}</span>
                             </div>
-                            {m.meaning && <p className="qi-colq-guess">Our guess: {m.meaning}</p>}
+                            {m.meaning && <p className="qi-colq-guess">{m.checkedOnline ? 'Found online, but not certain' : 'Our guess'}: {m.meaning}</p>}
                             <div className="qi-colq-answer">
                                 <input type="text" value={draft} placeholder={`What ${m.column.replace(/_/g, ' ')} holds, in your own words`}
                                     aria-label={`What ${m.column} means`}

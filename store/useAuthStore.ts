@@ -235,6 +235,8 @@ export const useAuthStore = create<AuthState>()(
                 resetUserData();
                 clearSharedAppData();
                 localStorage.removeItem('qi_token');
+                // What the AI found online about column names lasts for the session only.
+                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); } catch {}
                 try { sessionStorage.removeItem('qi_session_creds'); } catch {}
                 set({ currentUser: null, isAuthenticated: false });
             },
@@ -247,6 +249,7 @@ export const useAuthStore = create<AuthState>()(
                 resetUserData();
                 clearSharedAppData();
                 localStorage.removeItem('qi_token');
+                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); } catch {}
                 set({ currentUser: guestUser, isAuthenticated: true });
             },
 

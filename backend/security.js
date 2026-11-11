@@ -106,6 +106,9 @@ function contentSize(content) {
     return total;
 }
 
+/** Names, roles and formulas for a few hundred columns fit well inside this. */
+const WEB_SEARCH_MAX_CHARS = 40_000;
+
 function validateLlmRequest(body, allowedModels = allowedLlmModels()) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
         return { valid: false, error: 'Request body must be an object' };
@@ -143,6 +146,21 @@ function validateLlmRequest(body, allowedModels = allowedLlmModels()) {
     if (!Number.isFinite(temperature) || temperature < 0 || temperature > 1) {
         return { valid: false, error: 'temperature must be between 0 and 1' };
     }
+    // A web-checked request (column meanings verified online) carries names
+    // and metadata only: plain text, and small, so data cannot be routed
+    // through a search engine by way of this proxy.
+    const webSearch = body.web_search === true;
+    if (body.web_search !== undefined && typeof body.web_search !== 'boolean') {
+        return { valid: false, error: 'web_search must be true or false' };
+    }
+    if (webSearch) {
+        if (body.messages.some(message => typeof message.content !== 'string')) {
+            return { valid: false, error: 'A web-checked request must be plain text' };
+        }
+        if (totalSize > WEB_SEARCH_MAX_CHARS) {
+            return { valid: false, error: 'A web-checked request is limited to column names and metadata' };
+        }
+    }
     return {
         valid: true,
         value: {
@@ -150,8 +168,14 @@ function validateLlmRequest(body, allowedModels = allowedLlmModels()) {
             messages: body.messages,
             max_tokens: maxTokens,
             temperature,
+            web_search: webSearch,
         },
     };
+}
+
+/** Whether online checks are switched on for this deployment (LLM_WEB_SEARCH=off turns them off). */
+function webSearchEnabled(setting = process.env.LLM_WEB_SEARCH) {
+    return !/^(off|false|0|no)$/i.test(String(setting || '').trim());
 }
 
 module.exports = {
@@ -162,4 +186,6 @@ module.exports = {
     isPrivateOrReservedAddress,
     validateLlmRequest,
     validatePort,
+    webSearchEnabled,
+    WEB_SEARCH_MAX_CHARS,
 };

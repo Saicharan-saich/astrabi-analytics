@@ -5,7 +5,7 @@
  * not from rules written for one kind of file.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { columnDictionary, dictionaryForPrompt, dictionaryRequest, applyDictionary, rememberMeanings, rememberedMeanings, goodDirectionOf, unclearName, columnsNeedingWord } from '../services/columnDictionary';
+import { columnDictionary, dictionaryForPrompt, dictionaryRequest, applyDictionary, rememberMeanings, rememberedMeanings, goodDirectionOf, unclearName, columnsNeedingWord, sessionColumnContext, keepSessionColumnContext, clearSessionColumnContext, MEANINGS_VERSION } from '../services/columnDictionary';
 import { judgedAgainstMeaning } from '../services/ai-sql/readingCheck';
 import { numberShape, dateSpan, buildMaskedProfiles, profilesToPromptText } from '../services/dataMasker';
 import { describeData } from '../services/ai-sql/leanPipeline';
@@ -147,5 +147,74 @@ describe('columns whose meaning is only a guess', () => {
         const semantics = { bucket: { role: D, aggregation: 'NONE', format: 'raw', humanLabel: 'bucket', isHidden: false, goodDirection: 'higher', meaningSource: 'user' } } as any;
         const set = { ...ward, domainProfile: { domain: 'General', summary: '', confidence: 1, detectedAt: 0, columnSemantics: semantics } } as unknown as Dataset;
         expect(columnsNeedingWord(set).map(m => m.column)).toContain('bucket');
+    });
+});
+
+describe('meanings checked online', () => {
+    const ward = ds('ward_online.csv', [['admitted', T], ['ward', D], ['LOS', M], ['bucket', D], ['readmissions', M]],
+        i => ({ admitted: day(i % 30), ward: `W${i % 3}`, LOS: 1 + (i % 9), bucket: ['A', 'B', 'C'][i % 3], readmissions: i % 2 }));
+    const blank = { domain: 'Healthcare', summary: '', confidence: 1, detectedAt: 0, columnSemantics: {} } as any;
+    const found = {
+        checkedOnline: true,
+        about: 'A hospital ward stays record ([NHS](https://www.england.nhs.uk/x)).',
+        sources: [{ title: 'Length of stay - NHS Data Dictionary', url: 'https://www.datadictionary.nhs.uk/los' }],
+        columns: {
+            LOS: { meaning: 'Length of stay: days a patient spent on the ward ([source](https://www.datadictionary.nhs.uk/los)).', good: 'lower', sure: true, checked: true, source: 'https://www.datadictionary.nhs.uk/los' },
+            bucket: { meaning: 'An internal grouping.', sure: false, question: 'What do the bucket letters stand for?', checked: false },
+            readmissions: { meaning: 'Patients admitted again after leaving.', good: 'lower', sure: true, checked: true, source: 'javascript:alert(1)' },
+        },
+    };
+
+    it('asks the AI to check online with names and metadata only', () => {
+        const request = dictionaryRequest(ward, { online: true });
+        expect(request).toMatch(/CHECK THIS ONLINE/);
+        expect(request).toMatch(/"checked"/);
+        expect(request).toMatch(/"LOS"/);
+        // Nothing from the rows: no ward names, no numbers from the data.
+        expect(request).not.toMatch(/W0|W1|W2/);
+        expect(dictionaryRequest(ward)).not.toMatch(/CHECK THIS ONLINE/);
+    });
+
+    it('an abbreviation settled online stops asking; an internal code still asks', () => {
+        const next = { ...ward, domainProfile: applyDictionary(blank, found, ward) } as Dataset;
+        const open = columnsNeedingWord(next).map(m => m.column);
+        expect(open).toEqual(['bucket']);
+        const los = columnDictionary(next).find(m => m.column === 'LOS')!;
+        expect(los.sure).toBe(true);
+        expect(los.checkedOnline).toBe(true);
+        expect(los.meaning).toBe('Length of stay: days a patient spent on the ward.');
+        expect(los.sources).toEqual([{ title: 'Length of stay - NHS Data Dictionary', url: 'https://www.datadictionary.nhs.uk/los' }]);
+        expect(dictionaryForPrompt(next)).toMatch(/"LOS": Length of stay/);
+        expect(dictionaryForPrompt(next)).toMatch(/"bucket": NOT CONFIRMED/);
+        expect(next.domainProfile!.meaningsCheckedOnline).toBe(true);
+        expect(next.domainProfile!.meaningsVersion).toBe(MEANINGS_VERSION);
+        expect(next.domainProfile!.meaningsAbout).toBe('A hospital ward stays record.');
+    });
+
+    it('only real web addresses are kept as sources, and only a web-checked reply can claim a check', () => {
+        const next = applyDictionary(blank, found, ward);
+        expect(next.columnSemantics.readmissions.meaningSources).toEqual([]);
+        const offline = applyDictionary(blank, { ...found, checkedOnline: false }, ward);
+        expect(offline.columnSemantics.LOS.meaningCheckedOnline).toBe(false);
+        expect(offline.meaningsVersion).toBe(1);
+        expect(columnsNeedingWord({ ...ward, domainProfile: offline } as Dataset).map(m => m.column)).toContain('LOS');
+    });
+
+    it("the user's word still wins over what was found online", () => {
+        const mine = { ...blank, columnSemantics: { LOS: { role: M, aggregation: 'AVG', format: 'raw', humanLabel: 'LOS', isHidden: false, description: 'Level of service score', meaningSource: 'user', meaningSure: true } } };
+        const next = applyDictionary(mine, found, ward);
+        expect(next.columnSemantics.LOS.description).toBe('Level of service score');
+        expect(next.columnSemantics.LOS.meaningSource).toBe('user');
+    });
+
+    it('what was found is kept for the session and cleared at logout', () => {
+        const names = ward.columns.map(c => c.name);
+        expect(sessionColumnContext(names)).toBeNull();
+        keepSessionColumnContext(names, found);
+        expect(sessionColumnContext(names)).toEqual(found);
+        // Same kind of file, columns in another order: the same entry.
+        expect(sessionColumnContext([...names].reverse())).toEqual(found);
+        clearSessionColumnContext();
+        expect(sessionColumnContext(names)).toBeNull();
     });
 });

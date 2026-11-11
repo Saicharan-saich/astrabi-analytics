@@ -147,6 +147,12 @@ export async function fetchWithFallback(
          * marker cannot grant benchmark capacity to a normal user.
          */
         requestPurpose?: 'benchmark';
+        /**
+         * Let the model check what it says against the web (column meanings at
+         * upload). Only for requests that carry names and metadata: the
+         * backend refuses anything larger or non-text.
+         */
+        webSearch?: boolean;
     }
 ): Promise<{ data: any; model: string }> {
 
@@ -182,6 +188,7 @@ export async function fetchWithFallback(
                     messages,
                     temperature,
                     max_tokens,
+                    ...(options?.webSearch ? { web_search: true } : {}),
                 }),
                 signal: controller.signal,
             });

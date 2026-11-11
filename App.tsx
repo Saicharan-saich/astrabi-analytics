@@ -53,7 +53,7 @@ import { repairTwoLabelColumns } from './utils/twoValues';
 import { repairLegacyProfitMarginDataset } from './services/legacyDerivedMetricMigration';
 import { buildRelationalCatalog, createSubjectDataset } from './services/relationalCatalog';
 import { askColumnMeanings, blankProfile } from './services/columnDictionaryAI';
-import { applyDictionary, rememberMeanings } from './services/columnDictionary';
+import { applyDictionary, rememberMeanings, sessionColumnContext, MEANINGS_VERSION } from './services/columnDictionary';
 import { inferDefaultAggregationForGrain } from './services/smartAggregation';
 import { DomainReviewModal } from './components/DomainReviewModal';
 import { SplashScreen } from './components/SplashScreen';
@@ -495,12 +495,18 @@ function App() {
   // Written once per dataset by the AI from names, roles and formulas only;
   // the user's own settings always win. Re-applied onto whatever profile the
   // dataset has by the time the reply arrives, so nothing else is overwritten.
-  const meaningsRequested = useRef<string | null>(null);
+  // The meanings are checked online once per dataset per session: a dataset
+  // whose check is from an earlier session (nothing kept for it any more) is
+  // checked again; what was found is reused for the same kind of file.
+  const meaningsRequested = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!dataset || isAIProfiling || dataset.domainProfile?.meaningsVersion) return;
+    if (!dataset || isAIProfiling) return;
+    const checkedThisSession = (dataset.domainProfile?.meaningsVersion || 0) >= MEANINGS_VERSION
+      && Boolean(sessionColumnContext(dataset.columns.map(c => c.name)));
+    if (checkedThisSession) return;
     const key = dataset.id;
-    if (meaningsRequested.current === key) return;
-    meaningsRequested.current = key;
+    if (meaningsRequested.current.has(key)) return;
+    meaningsRequested.current.add(key);
     askColumnMeanings(dataset).then(reply => {
       if (!reply) return;
       const current = useAppStore.getState().dataset;
@@ -508,6 +514,8 @@ function App() {
       const updated = { ...current, domainProfile: applyDictionary(current.domainProfile || blankProfile(), reply, current) };
       useAppStore.getState().setDataset(updated);
       saveDatasetToDB(updated);
+      // The column settings show the same meanings (the user's own edits are never overwritten).
+      setPendingProfile((pending: any) => pending ? applyDictionary(pending, reply, current) : pending);
     });
   }, [dataset?.id, dataset?.domainProfile?.meaningsVersion, isAIProfiling]);
 

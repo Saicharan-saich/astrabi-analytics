@@ -121,3 +121,62 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `67-needs-word-badge-${theme}`);
     });
 }
+
+for (const theme of ['light', 'dark'] as const) {
+    test(`column meanings checked online ${theme}`, async ({ page }) => {
+        test.setTimeout(150_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'DASHBOARD');
+        // A stand-in for the AI's web-checked reply: the abbreviation is settled
+        // by the kind of file; the internal code is not.
+        const webChecks: any[] = [];
+        await page.route('**/api/llm/chat', async route => {
+            const body = route.request().postDataJSON() || {};
+            if (!body.web_search) return route.fulfill({ status: 200, contentType: 'application/json', body: '{}', headers: { 'Access-Control-Allow-Origin': '*' } });
+            webChecks.push(body);
+            const content = JSON.stringify({
+                about: 'A hospital ward stays record: one row per patient stay',
+                columns: {
+                    admitted: { meaning: 'The date the patient was admitted to the ward.', good: 'neutral', sure: true, checked: true, source: 'https://www.datadictionary.nhs.uk/admission-date' },
+                    ward: { meaning: 'The ward the patient stayed on.', good: 'neutral', words: ['ward'], sure: true, checked: true, source: 'https://www.datadictionary.nhs.uk/ward' },
+                    los: { meaning: 'Length of stay: the number of days the patient spent in hospital.', good: 'lower', words: ['length of stay', 'days in hospital'], sure: true, checked: true, source: 'https://www.datadictionary.nhs.uk/length-of-stay' },
+                    bucket: { meaning: 'A grouping letter used inside this organisation.', good: 'neutral', sure: false, question: 'What do the bucket letters A, B and C stand for in your ward?', checked: false },
+                    readmissions: { meaning: 'Whether the patient was admitted again after going home.', good: 'lower', words: ['readmitted', 'came back'], sure: true, checked: true, source: 'https://www.datadictionary.nhs.uk/readmission' },
+                },
+            });
+            await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ choices: [{ message: { content, annotations: [
+                { type: 'url_citation', url_citation: { url: 'https://www.datadictionary.nhs.uk/length-of-stay', title: 'Length of stay - NHS Data Dictionary' } },
+            ] } }], usage: { total_tokens: 900 } }) });
+        });
+        await go(page, 'Data Source');
+        await page.locator('input[type="file"][accept=".csv,.xlsx,.xls"]').first().setInputFiles({ name: 'ward_stays.csv', mimeType: 'text/csv', buffer: wardCsv() });
+        const ready = page.getByRole('dialog', { name: /ready for analysis/ });
+        await ready.waitFor({ timeout: 90000 });
+        await ready.getByRole('button', { name: 'Close' }).click();
+        await page.getByRole('tab', { name: 'Overview', exact: true }).click().catch(() => {});
+
+        // Only the internal code still asks; the abbreviation was settled online.
+        const card = page.locator('.qi-colq');
+        await expect(card).toContainText('One column needs your word', { timeout: 30000 });
+        await expect(card).toContainText('We checked every column name online');
+        await expect(card.locator('code')).toHaveText(/^bucket$/i);
+        await expect(card).toContainText('What do the bucket letters A, B and C stand for in your ward?');
+        await card.scrollIntoViewIfNeeded();
+        await shoot(page, `68-checked-online-card-${theme}`);
+
+        // What went to the web check: names and how columns are worked out, never a value.
+        expect(webChecks.length).toBe(1);
+        const sent = webChecks[0].messages.map((m: any) => String(m.content)).join('\n');
+        expect(sent).toContain('CHECK THIS ONLINE');
+        expect(sent).toMatch(/"los"/i);
+        expect(sent).not.toMatch(/\bOak\b|\bElm\b|\bAsh\b/);
+
+        await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+        await expect(page.locator('.qi-meanings-about')).toContainText('Column meanings checked online');
+        await page.locator('.qi-ws-row', { hasText: /^los/i }).first().click();
+        await expect(page.locator('.qi-checked-online').first()).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('link', { name: 'Length of stay - NHS Data Dictionary' })).toBeVisible();
+        await page.locator('.qi-checked-online').first().scrollIntoViewIfNeeded();
+        await shoot(page, `69-checked-online-columns-${theme}`);
+    });
+}

@@ -85,3 +85,29 @@ describe('backend security boundaries', () => {
     expect(result.valid).toBe(true);
   });
 });
+
+describe('web-checked AI requests (column meanings)', () => {
+  const { webSearchEnabled, WEB_SEARCH_MAX_CHARS } = require('../backend/security.js');
+  const models = allowedLlmModels();
+  const base = { model: 'openai/gpt-5.6-luna', messages: [{ role: 'user', content: 'Columns: "LOS": a number' }] };
+
+  it('passes the flag through only when it is a boolean', () => {
+    expect(validateLlmRequest({ ...base, web_search: true }, models)).toMatchObject({ valid: true, value: { web_search: true } });
+    expect(validateLlmRequest(base, models)).toMatchObject({ valid: true, value: { web_search: false } });
+    expect(validateLlmRequest({ ...base, web_search: 'yes' }, models)).toMatchObject({ valid: false });
+  });
+
+  it('refuses anything but a small plain-text request, so data cannot be routed through a search', () => {
+    expect(validateLlmRequest({ ...base, web_search: true, messages: [{ role: 'user', content: 'x'.repeat(WEB_SEARCH_MAX_CHARS + 1) }] }, models)).toMatchObject({ valid: false });
+    expect(validateLlmRequest({ ...base, web_search: true, messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe' }] }] }, models)).toMatchObject({ valid: false });
+    // The same large request without a web check is still allowed.
+    expect(validateLlmRequest({ ...base, messages: [{ role: 'user', content: 'x'.repeat(WEB_SEARCH_MAX_CHARS + 1) }] }, models)).toMatchObject({ valid: true });
+  });
+
+  it('can be switched off for a deployment', () => {
+    expect(webSearchEnabled(undefined)).toBe(true);
+    expect(webSearchEnabled('on')).toBe(true);
+    expect(webSearchEnabled('off')).toBe(false);
+    expect(webSearchEnabled('false')).toBe(false);
+  });
+});
