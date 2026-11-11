@@ -173,7 +173,8 @@ for (const theme of ['light', 'dark'] as const) {
 
         await page.getByRole('tab', { name: 'Columns', exact: true }).click();
         await expect(page.locator('.qi-meanings-about')).toContainText('Column meanings checked online');
-        await page.locator('.qi-ws-row', { hasText: /^los/i }).first().click();
+        // Open the column by its name (the middle of the row is the role picker).
+        await page.locator('.qi-ws-row', { hasText: /^los/i }).first().getByText(/^los$/i).click();
         await expect(page.locator('.qi-checked-online').first()).toBeVisible({ timeout: 15000 });
         await expect(page.getByRole('link', { name: 'Length of stay - NHS Data Dictionary' })).toBeVisible();
         await page.locator('.qi-checked-online').first().scrollIntoViewIfNeeded();
