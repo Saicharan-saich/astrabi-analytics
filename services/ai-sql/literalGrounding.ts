@@ -20,7 +20,8 @@ import { resolveCountryName } from '../../utils/chartSuggestions';
 
 export interface GroundedValue { column: string; asked: string; used: string }
 export interface UngroundedValue { column: string; asked: string; choices: string[] }
-export interface Grounding { sql: string; corrected: GroundedValue[]; unknown: UngroundedValue[] }
+export interface NarrowedValue { column: string; asked: string; used: string; others: string[] }
+export interface Grounding { sql: string; corrected: GroundedValue[]; unknown: UngroundedValue[]; narrowed?: NarrowedValue[] }
 
 const IDENT = String.raw`("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_]*)`;
 const LITERAL = String.raw`'((?:[^']|'')*)'`;
@@ -95,7 +96,9 @@ export function sameValues(asked: string, values: string[]): string[] {
     return [];
 }
 
-interface Use { column: string; literal: string; like: boolean; start: number; end: number }
+interface Use { column: string; literal: string; like: boolean; start: number; end: number; fold?: 'lower' | 'upper' }
+/** LOWER("col") = 'to go': the value written back has to be in the same case as the column side. */
+const foldOf = (text: string): Use['fold'] => /^\s*(?:TRIM\s*\(\s*)?LOWER\s*\(/i.test(text) ? 'lower' : /^\s*(?:TRIM\s*\(\s*)?UPPER\s*\(/i.test(text) ? 'upper' : undefined;
 
 /** Every text value a query compares a column with: =, <>, IN (…), LIKE and ILIKE. */
 function textUses(sql: string): Use[] {
@@ -105,12 +108,12 @@ function textUses(sql: string): Use[] {
     const one = new RegExp(`${wrap}${IDENT}${close}\\s*(=|<>|!=|NOT\\s+I?LIKE|I?LIKE)\\s*${wrap}${LITERAL}`, 'gi');
     for (const m of sql.matchAll(one)) {
         const at = m.index! + m[0].lastIndexOf(`'${m[3]}'`);
-        uses.push({ column: bare(m[1]), literal: m[3].replace(/''/g, "'"), like: /LIKE/i.test(m[2]), start: at, end: at + m[3].length + 2 });
+        uses.push({ column: bare(m[1]), literal: m[3].replace(/''/g, "'"), like: /LIKE/i.test(m[2]), start: at, end: at + m[3].length + 2, fold: foldOf(m[0]) });
     }
     const list = new RegExp(`${wrap}${IDENT}${close}\\s+(?:NOT\\s+)?IN\\s*\\(([^)]*)\\)`, 'gi');
     for (const m of sql.matchAll(list)) {
         const base = m.index! + m[0].indexOf('(', m[0].search(/\bIN\b/i));
-        for (const v of m[2].matchAll(new RegExp(LITERAL, 'g'))) uses.push({ column: bare(m[1]), literal: v[1].replace(/''/g, "'"), like: false, start: base + 1 + v.index!, end: base + 1 + v.index! + v[0].length });
+        for (const v of m[2].matchAll(new RegExp(LITERAL, 'g'))) uses.push({ column: bare(m[1]), literal: v[1].replace(/''/g, "'"), like: false, start: base + 1 + v.index!, end: base + 1 + v.index! + v[0].length, fold: foldOf(m[0]) });
     }
     return uses;
 }
@@ -122,9 +125,10 @@ const looksLikeDateOrNumber = (text: string) => /^\s*-?[\d.,:/\-\sT]+\s*$/.test(
  * compared with, correct the ones that are plainly the same thing, and
  * report the ones that match nothing.
  */
-export function groundValues(sql: string, dataset: Pick<Dataset, 'columns' | 'rows'>): Grounding {
+export function groundValues(sql: string, dataset: Pick<Dataset, 'columns' | 'rows'>, options: { keepPatterns?: boolean } = {}): Grounding {
     const corrected: GroundedValue[] = [];
     const unknown: UngroundedValue[] = [];
+    const narrowed: NarrowedValue[] = [];
     const columns = new Map(dataset.columns.map(c => [c.name.toLowerCase(), c]));
     const distinct = new Map<string, { values: string[]; counts: Map<string, number> }>();
     const valuesOf = (name: string) => {
@@ -136,6 +140,10 @@ export function groundValues(sql: string, dataset: Pick<Dataset, 'columns' | 'ro
         return distinct.get(name)!;
     };
     const edits: { start: number; end: number; text: string }[] = [];
+    const written = (use: Use, value: string, exact = false) => {
+        const cased = use.fold === 'lower' ? value.toLowerCase() : use.fold === 'upper' ? value.toUpperCase() : value;
+        return `'${use.like && !exact ? '%' : ''}${escapeSql(cased)}${use.like && !exact ? '%' : ''}'`;
+    };
     for (const use of textUses(sql)) {
         const column = columns.get(use.column.toLowerCase());
         // Categories and names only: numbers, dates, IDs and yes/no columns are not matched by wording.
@@ -146,17 +154,29 @@ export function groundValues(sql: string, dataset: Pick<Dataset, 'columns' | 'ro
         if (!values.length || values.length > 20000) continue;
         const p = pattern.toLowerCase();
         const present = use.like ? values.some(v => v.toLowerCase().includes(p)) : values.some(v => v.toLowerCase() === p);
-        if (present) continue;
+        if (present) {
+            // "a latte" written as LIKE '%latte%' also takes in Oat Milk Latte. When one value IS the
+            // word and others only contain it, the one named is used, and the answer says so.
+            if (use.like && !options.keepPatterns) {
+                const named = values.filter(v => stem(v) === stem(pattern));
+                const containing = values.filter(v => v.toLowerCase().includes(p));
+                if (named.length === 1 && containing.length > 1) {
+                    narrowed.push({ column: column.name, asked: pattern, used: named[0], others: containing.filter(v => v !== named[0]).slice(0, 3) });
+                    edits.push({ start: use.start, end: use.end, text: written(use, named[0], true) });
+                }
+            }
+            continue;
+        }
         if (unknown.some(u => u.column === column.name && u.asked === pattern) || corrected.some(c => c.column === column.name && c.asked === pattern)) {
             const done = corrected.find(c => c.column === column.name && c.asked === pattern);
-            if (done) edits.push({ start: use.start, end: use.end, text: `'${use.like ? '%' : ''}${escapeSql(use.like ? done.used : done.used)}${use.like ? '%' : ''}'` });
+            if (done) edits.push({ start: use.start, end: use.end, text: written(use, done.used) });
             continue;
         }
         const same = sameValues(pattern, values);
         if (same.length === 1) {
             corrected.push({ column: column.name, asked: pattern, used: same[0] });
             // The comparison stays as written (LOWER(col) = LOWER('x') still holds for the real value).
-            edits.push({ start: use.start, end: use.end, text: `'${use.like ? '%' : ''}${escapeSql(same[0])}${use.like ? '%' : ''}'` });
+            edits.push({ start: use.start, end: use.end, text: written(use, same[0]) });
             continue;
         }
         // Several could be meant, or none: the person chooses, from what is really there (most common first).
@@ -169,15 +189,20 @@ export function groundValues(sql: string, dataset: Pick<Dataset, 'columns' | 'ro
     }
     let out = sql;
     for (const edit of edits.sort((x, y) => y.start - x.start)) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
-    return { sql: out, corrected, unknown };
+    return { sql: out, corrected, unknown, ...(narrowed.length ? { narrowed } : {}) };
 }
 
 const plain = (name: string) => name.replace(/_/g, ' ');
 
 /** Said on the answer when a value was read as the file writes it. */
-export function groundingNote(corrected: GroundedValue[]): string | null {
-    if (!corrected.length) return null;
-    return `${corrected.slice(0, 3).map(c => `"${c.asked}" was read as ${c.used}, as your ${plain(c.column)} column writes it`).join('; ')}.`;
+export function groundingNote(corrected: GroundedValue[], narrowed: NarrowedValue[] = []): string | null {
+    const parts = [
+        ...corrected.slice(0, 3).map(c => `"${c.asked}" was read as ${c.used}, as your ${plain(c.column)} column writes it`),
+        ...narrowed.slice(0, 2).map(n => `this covers ${n.used} only, not ${n.others.join(', ')}; ask for "all ${n.asked}" to include them`),
+    ];
+    if (!parts.length) return null;
+    const text = parts.join('; ');
+    return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 }
 
 /** The question to put to the person when a value matches nothing in its column. */

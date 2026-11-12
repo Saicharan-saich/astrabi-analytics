@@ -954,7 +954,9 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
             if (ask.options.length) throw new AISQLClarificationError(ask.question, ask.options);
         }
         parsed.sql = grounded.sql;
-        groundingCaution = groundingNote(grounded.corrected);
+        groundingCaution = groundingNote(grounded.corrected, /\b(all|every|any|kinds? of|types? of)\b/i.test(question) ? [] : grounded.narrowed);
+        // "All lattes" means every value with the word in it: the query stays as the AI wrote it.
+        if (grounded.narrowed?.length && /\b(all|every|any|kinds? of|types? of)\b/i.test(question)) parsed.sql = groundValues(parsed.sql, { columns: dataset.columns, rows: dataset.rows }, { keepPatterns: true }).sql;
     } catch (error) {
         if (error instanceof AISQLClarificationError) throw error;
         /* the query stands as written */

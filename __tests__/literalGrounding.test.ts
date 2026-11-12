@@ -36,7 +36,7 @@ describe('a value the AI guessed is checked against the column it filters', () =
     it('"UK" is corrected to GB, the way this file writes the country', () => {
         const live = `SELECT ROUND(100.0 * COUNT_IF(LOWER(billing_country) <> LOWER('UK') AND billing_country IS NOT NULL) / NULLIF(COUNT(*), 0), 1) AS outside_uk_order_share_pct FROM order_countries`;
         const g = groundValues(live, orders);
-        expect(g.sql).toContain(`LOWER(billing_country) <> LOWER('GB')`);
+        expect(g.sql).toContain(`LOWER(billing_country) <> LOWER('gb')`);
         expect(g.corrected).toEqual([{ column: 'billing_country', asked: 'UK', used: 'GB' }]);
     });
 
@@ -58,8 +58,28 @@ describe('a value the AI guessed is checked against the column it filters', () =
         expect(g.unknown).toEqual([{ column: 'dining_option', asked: 'drive through', choices: ['To Go', 'For Here'] }]);
     });
 
+    it('writes the value back in the case the query compares in (found on the live re-run)', () => {
+        const lower = groundValues(`SELECT SUM(CASE WHEN LOWER("dining_option") = 'takeaway' THEN "net_sales" ELSE 0 END) AS t FROM "data"`, cafe);
+        expect(lower.sql).toContain(`LOWER("dining_option") = 'to go'`);
+        const list = groundValues(`SELECT COUNT(DISTINCT CASE WHEN LOWER("billing_country") NOT IN ('uk', 'united kingdom') THEN "name" END) AS n FROM "data"`, orders);
+        expect(list.sql).toContain(`NOT IN ('gb', 'gb')`);
+        const upper = groundValues(`SELECT COUNT(*) AS n FROM "data" WHERE UPPER("billing_country") = 'UK'`, orders);
+        expect(upper.sql).toContain(`= 'GB'`);
+    });
+
+    it('"a latte" means Latte, not every item with latte in its name, and says so', () => {
+        const live = `SELECT ROUND(SUM("gross_sales") / NULLIF(SUM("qty"), 0), 2) AS average_price FROM "data" WHERE "item" ILIKE '%latte%'`;
+        const g = groundValues(live, cafe);
+        expect(g.sql).toContain(`"item" ILIKE 'Latte'`);
+        expect(groundingNote(g.corrected, g.narrowed)).toBe('This covers Latte only, not Oat Milk Latte; ask for "all latte" to include them.');
+        expect(groundValues(live, cafe, { keepPatterns: true }).sql).toBe(live);
+        // Only one value has the word: nothing to narrow.
+        const one = `SELECT COUNT(*) FROM "data" WHERE "item" ILIKE '%croissant%'`;
+        expect(groundValues(one, cafe).sql).toBe(one);
+    });
+
     it('leaves alone values that are there, numbers, dates, IDs, and long lists with nothing alike', () => {
-        const fine = `SELECT SUM("qty") FROM "data" WHERE "item" ILIKE '%latte%' AND "dining_option" = 'To Go' AND CAST("date" AS DATE) >= DATE '2026-10-01'`;
+        const fine = `SELECT SUM("qty") FROM "data" WHERE "item" ILIKE '%croissant%' AND "dining_option" = 'To Go' AND CAST("date" AS DATE) >= DATE '2026-10-01'`;
         expect(groundValues(fine, cafe)).toEqual({ sql: fine, corrected: [], unknown: [] });
         const ids = `SELECT COUNT(*) FROM "data" WHERE "name" = '#9999'`;
         expect(groundValues(ids, orders).sql).toBe(ids);
