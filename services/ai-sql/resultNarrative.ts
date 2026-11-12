@@ -404,7 +404,7 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
                 return {
                     version: 1, verifiedFrom: 'executed_result', kind: 'ranking',
                     headline: !above.length ? `No ${word} is ${overWord} ${planWord}` : small ? `No ${word} is far ${overWord} ${planWord}` : `${groupName(above[0], dimension)} is furthest ${overWord} ${planWord}`,
-                    summary: `${above.length ? `${join(overParts)}${above.length > 4 ? ` and ${above.length - 4} more` : ''}${small ? `, which is close to ${planWord} rather than a real ${label}` : ''}.` : `None of the ${ranked.length} is ${overWord} ${planWord}.`}${underParts.length ? ` ${join(underParts)}${atOrBelow.length > 3 ? ` and ${atOrBelow.length - 3} more` : ''}.` : ''}${totalLine}`,
+                    summary: `${above.length ? `${join(overParts)}${above.length > 4 ? ` and ${above.length - 4} more` : ''}.${small ? ` ${above.length === 1 ? 'That is' : above.length === 2 ? 'Both are' : 'All are'} within 2% of ${planWord}.` : ''}` : `None of the ${ranked.length} is ${overWord} ${planWord}.`}${underParts.length ? ` ${join(underParts)}${atOrBelow.length > 3 ? ` and ${atOrBelow.length - 3} more` : ''}.` : ''}${totalLine}`,
                 };
             }
             return {

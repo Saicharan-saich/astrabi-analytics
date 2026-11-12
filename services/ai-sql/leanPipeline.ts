@@ -28,7 +28,7 @@ import { AISQLPipelineError } from './pipelineError';
 import { resolveAISQLSemanticModel } from './semanticLayer';
 import { discoverJoinContext } from './joinEngine';
 import { duckTableName, queryTablesOf } from '../../utils/duckColumnType';
-import { judgedAgainstMeaning, readingTurnedAround, turnAroundRepair, oneSidedFilter, ONE_SIDED_REPAIR } from './readingCheck';
+import { judgedAgainstMeaning, readingTurnedAround, turnAroundRepair, oneSidedFilter, ONE_SIDED_REPAIR, withoutSideFilter } from './readingCheck';
 import { rowWiseDifferences, unevenBlankPairs, unevenBlankNote } from '../../utils/unevenBlanks';
 import { carriedFilters, carriedFilterRepair, describeCarried, keptFilters } from './carriedFilters';
 import { dictionaryForPrompt, goodDirectionOf } from '../columnDictionary';
@@ -909,6 +909,10 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     // ── 1d. Only one side of a judgement shown? "Which departments are overspending?" answered
     // with a filter that hides everyone under budget reads as if nobody else was looked at.
     // Every group is returned, worst first, and the words say who is on which side.
+    // A HAVING that only picks a side is taken off here, on the query itself; the AI is asked
+    // again only for forms that cannot be taken off safely (a filter outside a sub-query).
+    const everyGroup = withoutSideFilter(parsed.sql, question);
+    if (everyGroup) parsed.sql = everyGroup;
     // (Asked again at most once per question: not after a re-read or a carried filter.)
     const oneSided = !turned && !carried.length && oneSidedFilter(parsed.sql, question);
     if (oneSided) {

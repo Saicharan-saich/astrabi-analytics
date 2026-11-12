@@ -124,7 +124,7 @@ describe('the headline answers the question', () => {
             reply: { dimensions: ['department'], measures: ['total_budgeted_amount', 'total_actual_spending', 'record_count', 'overspend'], answer: 'overspend' },
             model: resolveAISQLSemanticModel(ds).model, dataset: ds, started: 0, repairAttempts: 0, tokens: 1, aiModel: 'test', cautions: [],
         });
-        expect(result.narrative?.summary).toBe('Operations is 3,814 over budget (0.1% of its budget), which is close to budget rather than a real overspend. Marketing is 22,409 under budget (0.9% of its budget). Together, that is 18,595 under budget (0.3%).');
+        expect(result.narrative?.summary).toBe('Operations is 3,814 over budget (0.1% of its budget). That is within 2% of budget. Marketing is 22,409 under budget (0.9% of its budget). Together, that is 18,595 under budget (0.3%).');
         expect(result.chart.secondaryYKeys || []).toEqual([]);
     });
 });

@@ -12,7 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import { unevenBlankPairs, rowWiseDifferences, unevenBlankNote } from '../utils/unevenBlanks';
 import { findPlanActual } from '../utils/planActual';
-import { oneSidedFilter } from '../services/ai-sql/readingCheck';
+import { oneSidedFilter, withoutSideFilter } from '../services/ai-sql/readingCheck';
 import { asksForColumns, classifyTurn } from '../services/ai-sql/chatContext';
 import { columnsAnswer } from '../services/ai-sql/columnsAnswer';
 import { describeData, buildLeanAnswer, parseLeanReply, LEAN_SYSTEM_PROMPT } from '../services/ai-sql/leanPipeline';
@@ -95,6 +95,22 @@ describe('"which departments are overspending?" shows every department', () => {
         expect(oneSidedFilter('WITH t AS (SELECT "department", SUM("variance") AS total_variance FROM "data" GROUP BY 1) SELECT * FROM t WHERE total_variance < 0', q)).toBe(true);
         expect(oneSidedFilter('SELECT "department", SUM("actual_spending" - "budgeted_amount") AS overspend FROM "data" GROUP BY 1 ORDER BY 2 DESC', q)).toBe(false);
     });
+    it('takes a side-only HAVING off the query the live AI actually wrote, and keeps real thresholds', () => {
+        // Written by the live AI for this question on 12 Nov 2026: only Marketing and Operations came back.
+        const live = 'SELECT\n  "department",\n  ROUND(SUM("actual_spending") - SUM("budgeted_amount"), 2) AS overspend,\n  ROUND(SUM("budgeted_amount"), 2) AS total_budgeted_amount,\n  COUNT(*) AS group_size\nFROM "data"\nGROUP BY "department"\nHAVING SUM("actual_spending") > SUM("budgeted_amount")\nORDER BY overspend DESC\nLIMIT 10;';
+        const all = withoutSideFilter(live, q)!;
+        expect(all).not.toMatch(/HAVING/i);
+        expect(all).toMatch(/GROUP BY "department"\s+ORDER BY overspend DESC\s+LIMIT 10$/);
+        expect(withoutSideFilter('SELECT "d", SUM("v") AS v FROM "data" GROUP BY 1 HAVING SUM("v") < 0', q)).toBe('SELECT "d", SUM("v") AS v FROM "data" GROUP BY 1');
+        // A figure someone chose, a text filter, a count question and an "only" question keep their HAVING.
+        expect(withoutSideFilter('SELECT "d", SUM("v") AS v FROM "data" GROUP BY 1 HAVING COUNT(*) >= 5', q)).toBeNull();
+        expect(withoutSideFilter('SELECT "d", SUM("v") AS v FROM "data" GROUP BY 1 HAVING SUM("v") > 10000', q)).toBeNull();
+        expect(withoutSideFilter(live, 'How many departments are overspending?')).toBeNull();
+        expect(withoutSideFilter(live, 'Show only the departments that are overspending')).toBeNull();
+        expect(withoutSideFilter(live, 'Which departments overspent by more than 5000?')).toBeNull();
+        // A HAVING inside a sub-query is not the answer's own filter.
+        expect(withoutSideFilter('SELECT COUNT(*) AS n FROM (SELECT "d" FROM "data" GROUP BY 1 HAVING SUM("v") > 0)', q)).toBeNull();
+    });
     it('leaves alone a count, an "only", a threshold that is not zero and a filter on rows', () => {
         const having = 'SELECT "department", SUM("variance") AS v FROM "data" GROUP BY 1 HAVING SUM("variance") < 0';
         expect(oneSidedFilter(having, 'How many departments are overspending?')).toBe(false);
@@ -110,7 +126,7 @@ describe('"which departments are overspending?" shows every department', () => {
             reply: { dimensions: ['department'], measures: ['total_budgeted_amount', 'overspend'], answer: 'overspend' },
             model: resolveAISQLSemanticModel(ds).model, dataset: ds, started: 0, repairAttempts: 0, tokens: 1, aiModel: 'test', cautions: [],
         });
-        expect(result.narrative?.summary).toBe('Operations is 3,814 over budget (0.1% of its budget), which is close to budget rather than a real overspend.');
+        expect(result.narrative?.summary).toBe('Operations is 3,814 over budget (0.1% of its budget). That is within 2% of budget.');
         expect(result.narrative?.summary).not.toMatch(/of the total shown/);
     });
 });

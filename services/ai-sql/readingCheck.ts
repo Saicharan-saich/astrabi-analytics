@@ -79,3 +79,43 @@ export function oneSidedFilter(sql: string, question: string): boolean {
 
 /** Sent back to the AI when its query keeps only one side. */
 export const ONE_SIDED_REPAIR = 'Your query keeps only the groups on one side of zero (a HAVING or WHERE that compares the result with 0). Return EVERY group, ordered worst first, with no such filter: the answer itself says which groups are over and which are under, so the person can see that the others were checked too.';
+
+/** Positions of a keyword at the top level of a query (not inside brackets or quotes). */
+function topLevel(sql: string, keyword: RegExp): number[] {
+    const found: number[] = [];
+    let depth = 0;
+    for (let i = 0; i < sql.length; i++) {
+        const ch = sql[i];
+        if (ch === "'" || ch === '"') { const end = sql.indexOf(ch, i + 1); i = end < 0 ? sql.length : end; continue; }
+        if (ch === '(') depth++;
+        else if (ch === ')') depth--;
+        else if (depth === 0 && /[A-Za-z]/.test(ch) && (i === 0 || !/[A-Za-z0-9_]/.test(sql[i - 1]))) {
+            const m = keyword.exec(sql.slice(i, i + 12));
+            if (m && m.index === 0) found.push(i);
+        }
+    }
+    return found;
+}
+
+/**
+ * The same query without a HAVING that only picks a side: HAVING SUM(actual)
+ * > SUM(budget), HAVING overspend > 0. Every group then comes back and the
+ * words say who is over and who is under. A HAVING with a figure in it
+ * (HAVING COUNT(*) >= 5, HAVING SUM(sales) > 10000) is a threshold someone
+ * chose and is kept, as is anything in a count or an "only" question.
+ * Done here, on the query text, so it does not depend on the AI agreeing.
+ */
+export function withoutSideFilter(sql: string, question: string): string | null {
+    if (/^\s*(how many|count|number of)\b/i.test(question) || /\b(only|just|exclud\w+|leave out|without)\b/i.test(question) || /\d/.test(question)) return null;
+    const body = sql.replace(/;\s*$/, '');
+    const having = topLevel(body, /^HAVING\b/i);
+    if (having.length !== 1 || !topLevel(body, /^GROUP\b/i).length) return null;
+    const start = having[0];
+    const ends = [...topLevel(body, /^ORDER\b/i), ...topLevel(body, /^LIMIT\b/i), ...topLevel(body, /^QUALIFY\b/i)].filter(i => i > start);
+    const end = ends.length ? Math.min(...ends) : body.length;
+    const clause = body.slice(start, end);
+    // A figure other than 0 is a threshold; text values are a filter on what the groups are.
+    const numbers = (clause.replace(/'[^']*'/g, m => m).match(/(?<![A-Za-z_"])\d+(?:\.\d+)?/g) || []).filter(n => Number(n) !== 0);
+    if (numbers.length || /'/.test(clause) || !/[<>]/.test(clause)) return null;
+    return `${body.slice(0, start).trimEnd()} ${body.slice(end)}`.trim();
+}

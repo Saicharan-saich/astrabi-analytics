@@ -248,7 +248,7 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(thread).toContainText('IT is 28,800 under budget');
         await expect(thread).toContainText('8 rows have a budgeted amount but no actual spending');
         await expect(page.locator('.qi-chat-alternatives')).toContainText('Which departments have the largest budgets?');
-        expect(asked.length).toBe(2);
+        expect(asked.length).toBe(1);
         await page.locator('.qi-chat-alternatives').scrollIntoViewIfNeeded();
         await shoot(page, `71-ai-sql-overspend-${theme}`);
 
