@@ -242,7 +242,10 @@ export function suggestCharts(input: ChartShapeInput): { best: ChartSuggestion |
     if (shape.isStage && n >= 2 && n <= 10 && !shape.hasNegatives) add('funnel', 'drop-off between stages');
 
     if (shape.hasNegatives) {
-        if (shape.additive) add('waterfall', 'what adds and what takes away');
+        // A gap against a plan for each group (overspend, variance, shortfall) is compared around zero.
+        // A waterfall would add the groups into a running total and colour an overspend green as a "gain".
+        const gapAgainstPlan = /(overspend|over_?budget|under_?budget|underspend|variance|shortfall|deficit|surplus|over_?target|under_?target|against_(budget|plan|target|forecast)|vs_(budget|plan|target|forecast))/i.test(`${input.yKey}`);
+        if (shape.additive && !gapAgainstPlan) add('waterfall', 'what adds and what takes away');
         add(shape.longLabels || n > 8 ? 'horizontalBar' : 'bar', 'positive and negative values');
         add('lollipop', 'values around zero');
     } else if (shape.ranked) {

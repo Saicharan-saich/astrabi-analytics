@@ -126,9 +126,10 @@ describe('"give me column names" is answered from what the app knows, with no AI
     it('lists every column in plain words, with how a worked-out column is made', () => {
         const { message, suggestions } = columnsAnswer(budget());
         expect(message).toMatch(/^Your data has 7 columns:/);
-        expect(message).toMatch(/- \*\*department\*\*: a category to split by/);
-        expect(message).toMatch(/- \*\*actual spending\*\*: a number that is added up/);
-        expect(message).toMatch(/- \*\*variance\*\*: .*worked out as variance = budgeted amount − actual spending/);
+        expect(message).toMatch(/- department: a category to split by/);
+        expect(message).toMatch(/- actual spending: a number that is added up/);
+        expect(message).toMatch(/- variance: .*worked out as variance = budgeted amount − actual spending/);
+        expect(suggestions[0]).toBe('Total actual spending by department');
         expect(message).not.toMatch(/_/);
         expect(suggestions.length).toBeGreaterThan(0);
     });

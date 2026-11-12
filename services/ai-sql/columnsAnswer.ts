@@ -21,11 +21,13 @@ export function columnsAnswer(dataset: Dataset): { message: string; suggestions:
             m.formula ? `worked out as ${m.formula.replace(/"/g, '').replace(/_/g, ' ').split(', so ')[0]}` : '',
             !m.sure ? 'its meaning is not confirmed yet' : '',
         ].filter(Boolean).join('; ');
-        return `- **${plain(m.column)}**: ${meaning}${extra ? ` (${extra})` : ''}`;
+        return `- ${plain(m.column)}: ${meaning}${extra ? ` (${extra})` : ''}`;
     });
     const hidden = dataset.columns.filter(c => !c.name.startsWith('__')).length - dictionary.length;
     const message = `Your data has ${dictionary.length} column${dictionary.length === 1 ? '' : 's'}${hidden > 0 ? ` (${hidden} more ${hidden === 1 ? 'is' : 'are'} hidden)` : ''}:\n\n${lines.join('\n')}\n\nYou can correct any of these in Dataset Workspace → Columns.`;
-    const number = dictionary.find(m => m.combine === 'add up');
+    // What happened before what was planned: "actual spending" rather than "budgeted amount".
+    const planned = (name: string) => /(budget|plan|target|forecast|quota|expected|estimat)/i.test(name);
+    const number = dictionary.find(m => m.combine === 'add up' && !m.formula && !planned(m.column)) || dictionary.find(m => m.combine === 'add up');
     const group = dictionary.find(m => m.combine === 'group by');
     const date = dictionary.find(m => m.combine === 'date');
     const suggestions = [

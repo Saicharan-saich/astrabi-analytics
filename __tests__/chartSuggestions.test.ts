@@ -132,3 +132,12 @@ describe('chart suggestions', () => {
         expect(frameCountries(['atlantis'], project, 800, 440)).toBeNull();
     });
 });
+
+describe('a gap against a plan for each group', () => {
+    it('is compared around zero with plain bars, never added into a waterfall', () => {
+        const rows = [{ department: 'Marketing', overspend: 42000 }, { department: 'Operations', overspend: 3600 }, { department: 'IT', overspend: -28800 }];
+        const result = suggestCharts({ rows, xKey: 'department', yKey: 'overspend', aggregation: 'SUM' });
+        expect(result.suggestions.map(s => s.type)).not.toContain('waterfall');
+        expect(result.best?.type).toBe('bar');
+    });
+});
