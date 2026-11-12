@@ -220,3 +220,22 @@ export function summedBalanceNote(sql: string, columns: ColumnDefinition[]): str
     }
     return null;
 }
+
+/**
+ * AVG("sales" / "qty") gives every row the same weight, so a row of 1 unit
+ * counts as much as a row of 50; the average price is total sales over total
+ * quantity. Rewritten for two number columns of the data only; the same when
+ * every row has the same quantity.
+ */
+export function weightedAverages(sql: string, columns: ColumnDefinition[]): { sql: string; note: string | null } {
+    const metric = (name: string) => columns.some(item => item.name.toLowerCase() === unquote(name).toLowerCase() && String(item.type) === 'METRIC');
+    let note: string | null = null;
+    const pattern = new RegExp(String.raw`\bAVG\s*\(\s*(${IDENT})\s*/\s*(?:NULLIF\s*\(\s*(${IDENT})\s*,\s*0\s*\)|(${IDENT}))\s*\)`, 'gi');
+    const next = sql.replace(pattern, (whole, a: string, b1: string | undefined, b2: string | undefined) => {
+        const b = b1 || b2!;
+        if (!metric(a) || !metric(b)) return whole;
+        note = `The average is worked out as total ${words(unquote(a))} divided by total ${words(unquote(b))}, so a row with more ${words(unquote(b))} counts for more. Averaging each row's own figure would count every row the same.`;
+        return `SUM(${a}) / NULLIF(SUM(${b}), 0)`;
+    });
+    return { sql: next, note };
+}

@@ -29,6 +29,7 @@ import { resolveAISQLSemanticModel } from './semanticLayer';
 import { discoverJoinContext } from './joinEngine';
 import { duckTableName, queryTablesOf } from '../../utils/duckColumnType';
 import { judgedAgainstMeaning, readingTurnedAround, turnAroundRepair, oneSidedFilter, ONE_SIDED_REPAIR, withoutSideFilter } from './readingCheck';
+import { groundValues, groundingNote, groundingQuestion } from './literalGrounding';
 import { rowWiseDifferences, unevenBlankPairs, unevenBlankNote } from '../../utils/unevenBlanks';
 import { carriedFilters, carriedFilterRepair, describeCarried, keptFilters } from './carriedFilters';
 import { dictionaryForPrompt, goodDirectionOf } from '../columnDictionary';
@@ -46,7 +47,7 @@ import { averageCaution, groupedAverageMessage } from '../../utils/averageCheck'
 import { relabelYesNo } from './plainLabels';
 import { rateTooUncertain } from '../../utils/plausibility';
 import { guardAnswer, valuesArePartsOfWhole } from '../../utils/answerGuard';
-import { averagedRatioNote, averageNotesFromValues, averageValuesQuery, fillMonthlyGaps, missingMonthsNote, partialMonthNote, perItemColumns, perItemSumNote, perLineAverageNote, summedBalanceNote } from './numberChecks';
+import { averagedRatioNote, averageNotesFromValues, averageValuesQuery, fillMonthlyGaps, missingMonthsNote, partialMonthNote, perItemColumns, perItemSumNote, perLineAverageNote, summedBalanceNote, weightedAverages } from './numberChecks';
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -141,6 +142,7 @@ STEP 2 — Otherwise answer (action "answer").
 - Totals use SUM, averages AVG, counts COUNT(*) or COUNT(DISTINCT ...). Round money and averages to 2 decimals with ROUND(x, 2).
 - Correct numbers (standard BI rules):
   - A rate, margin or percentage over many rows is worked out from totals, e.g. SUM("profit") / NULLIF(SUM("revenue"), 0) * 100, never AVG of a per-row percentage column, unless the user asks for "the average of" that column.
+  - An average price, cost or value per unit over many rows is total amount divided by total quantity, SUM("sales") / NULLIF(SUM("qty"), 0), never AVG of a per-row division: AVG("sales" / "qty") counts a row of 1 unit as much as a row of 50.
   - "Average per order / customer / store": total divided by distinct count, e.g. SUM("sales") / COUNT(DISTINCT "order_id"), above all when that ID is marked as repeating (several rows per order). AVG over rows is the average per line.
   - Columns marked "per-item figure" (price, age, rating) are averaged, never added up. A total value of items is SUM(price * quantity) when there is a quantity column.
   - Balances, stock levels and headcounts are snapshots: never SUM them across dates; use the value on the latest date, or AVG over the period.
@@ -937,6 +939,26 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
             unevenCaution = unevenBlankNote(rowWise.used);
         } catch { /* the query stands as written */ }
     }
+    // An average of a per-row division is worked out from the totals instead.
+    let weightedCaution: string | null = null;
+    try { const weighted = weightedAverages(parsed.sql, dataset.columns); parsed.sql = weighted.sql; weightedCaution = weighted.note; } catch { /* as written */ }
+    // ── 1f. Value grounding: the AI has never seen the values, so every text value its query
+    // filters on is looked up in its column here. One that is plainly the same thing is corrected
+    // to the way the file writes it; one that matches nothing is put to the person, with the real values.
+    let groundingCaution: string | null = null;
+    try {
+        const grounded = groundValues(parsed.sql, dataset);
+        if (grounded.unknown.length) {
+            const ask = groundingQuestion(parsed.question || question, grounded.unknown[0]);
+            if (options.autoChoose && ask.options[0]) return runLeanAISQL(ask.options[0].question, dataset, { ...options, autoChoose: false });
+            if (ask.options.length) throw new AISQLClarificationError(ask.question, ask.options);
+        }
+        parsed.sql = grounded.sql;
+        groundingCaution = groundingNote(grounded.corrected);
+    } catch (error) {
+        if (error instanceof AISQLClarificationError) throw error;
+        /* the query stands as written */
+    }
     // The standalone question is what later follow-ups and the repair use.
     const standalone = parsed.question || question;
 
@@ -973,7 +995,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
 
     options.onProgress?.('Checking the numbers');
     const series = completeTimeSeries(sql, execution.data || [], parsed, model.timeContext, dataset);
-    const cautions = [...(carriedCaution ? [carriedCaution] : []), ...(readingCaution ? [readingCaution] : []), ...(unevenCaution ? [unevenCaution] : []), ...await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext, `${question} ${standalone}`), ...series.notes];
+    const cautions = [...(carriedCaution ? [carriedCaution] : []), ...(readingCaution ? [readingCaution] : []), ...(unevenCaution ? [unevenCaution] : []), ...(groundingCaution ? [groundingCaution] : []), ...(weightedCaution ? [weightedCaution] : []), ...await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext, `${question} ${standalone}`), ...series.notes];
     options.onProgress?.('Choosing the chart');
     const result = buildLeanAnswer({
         question: standalone, sql, rows: series.rows, reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model, originalQuestion: question, cautions,
