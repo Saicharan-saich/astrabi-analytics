@@ -5649,3 +5649,5 @@ html.dark .qi-checked-online { color: #6ee7b7; }
 .qi-meanings-about { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); background: color-mix(in srgb, #10b981 8%, transparent); border: 1px solid color-mix(in srgb, #10b981 28%, transparent); }
 .qi-meanings-about svg { flex: none; margin-top: 2px; color: #059669; }
 html.dark .qi-meanings-about svg { color: #6ee7b7; }
+.qi-chat-alternatives { align-items: center; }
+.qi-chat-alternatives-label { font-size: 12.5px; font-weight: 600; color: var(--text-tertiary); }

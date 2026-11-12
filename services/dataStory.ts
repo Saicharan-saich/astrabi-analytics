@@ -26,8 +26,9 @@ import { flagSubject, isYesNoColumn, yesNoLabel } from './ai-sql/plainLabels';
 import { describeDatasetShape } from './datasetShape';
 import { isPerRowName } from '../utils/numberMeaning';
 import { buildRecordsStory } from './recordsStory';
+import { findPlanActual } from '../utils/planActual';
 
-export type StoryKind = 'overview' | 'trend' | 'anomaly' | 'movers' | 'breakdown' | 'concentration' | 'margin' | 'contrast' | 'relationship' | 'quality';
+export type StoryKind = 'overview' | 'plan' | 'trend' | 'anomaly' | 'movers' | 'breakdown' | 'concentration' | 'margin' | 'contrast' | 'relationship' | 'quality';
 
 export interface StoryChart {
     data: Record<string, string | number>[];
@@ -276,7 +277,10 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
         const score = (m: Measure) => (mentions(question, m.name) ? 100 : 0) + (m.symbol ? 20 : 0) + (REVENUE.test(m.name) ? 12 : 0) + (m.money ? 8 : 0) + (m.agg === 'sum' ? 5 : 0);
         return score(b) - score(a);
     });
-    const measure = ranked[0];
+    // A file that sets actuals against a plan is about the actuals: "budgeted amount is down 2%" is not the story.
+    const planActual = findPlanActual(measures.map(m => m.name), shape.formulas || []);
+    const actualMeasure = planActual && !measures.some(m => mentions(question, m.name)) ? measures.find(m => m.name === planActual.actual) : undefined;
+    const measure = actualMeasure || ranked[0];
     const fmt = (value: number, m: Measure | undefined = measure) => compact(value, m?.symbol || '');
     const recordWord = idColumn ? pluralPhrase(human(idColumn.name).replace(/\s*(id|number|no|num|ref|reference|code|key)$/i, '').trim() || 'record') : 'rows';
     const oneRecord = recordWord === 'rows' ? 'row' : recordWord.replace(/ies$/, 'y').replace(/(ch|sh|x|s)es$/, '$1').replace(/s$/, '');
@@ -341,6 +345,59 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
         if (!firstDay && !useful.length) headline = headline.replace(/\.$/, '. There is no date or grouping column to break it down by.');
         findings.push({ id: 'overview', kind: 'overview', eyebrow: 'At a glance', headline, points, kpis, score: 1000 });
         subtitleParts.unshift(capital(measure.label));
+    }
+
+    // ── 1b. against the plan: who is over and who is under ──
+    // Worked out row by row, so a row with a budget and no actual (or the reverse) is left out of both sides.
+    if (planActual) {
+        const both = rows.map(row => ({ row, plan: asNumber(row[planActual.plan]), actual: asNumber(row[planActual.actual]) }))
+            .filter((r): r is { row: Record<string, any>; plan: number; actual: number } => r.plan !== null && r.actual !== null);
+        const totalPlan = both.reduce((s, r) => s + r.plan, 0);
+        const totalActual = both.reduce((s, r) => s + r.actual, 0);
+        if (both.length >= 2 && totalPlan !== 0) {
+            const w = planActual.planWord;
+            const [more, less] = planActual.nature === 'income' ? ['ahead of', 'short of'] : planActual.nature === 'spending' ? ['over', 'under'] : ['above', 'below'];
+            const side = (gap: number) => gap > 0 ? more : less;
+            const share = (gap: number, plan: number, open = ' (', close = ')') => plan ? `${open}${pct(Math.abs(gap) / Math.abs(plan), 1)} of ${w}${close}` : '';
+            const gap = totalActual - totalPlan;
+            const planM = measures.find(m => m.name === planActual.plan);
+            const points: string[] = [];
+            const skipped = rows.length - both.length;
+            if (skipped > 0) points.push(`${count(skipped)} row${skipped === 1 ? ' is' : 's are'} missing the ${human(planActual.plan)} or the ${human(planActual.actual)}, and ${skipped === 1 ? 'is' : 'are'} left out of this comparison.`);
+            // The grouping people ask about first: the first useful one that is not just a label for the same thing ("Over Budget").
+            const restates = (g: Grouping) => rows.slice(0, 300).some(row => /\b(over|under|on|above|below|within)\b.*\b(budget|target|plan|forecast)\b/i.test(String(row[g.name] ?? '')));
+            const grouping = useful.find(g => g.distinct <= 40 && !g.yearLike && !restates(g));
+            let chart: StoryChart | undefined;
+            let ask: string | undefined;
+            if (grouping) {
+                const by = new Map<string, { plan: number; actual: number }>();
+                for (const r of both) {
+                    const key = isBlank(r.row[grouping.name]) ? 'Not recorded' : String(r.row[grouping.name]);
+                    const entry = by.get(key) || { plan: 0, actual: 0 };
+                    entry.plan += r.plan; entry.actual += r.actual;
+                    by.set(key, entry);
+                }
+                const gaps = [...by.entries()].map(([name, e]) => ({ name, gap: e.actual - e.plan, plan: e.plan })).sort((a, b) => b.gap - a.gap);
+                const bad = planActual.nature === 'income' ? [...gaps].reverse().filter(g => g.gap < 0) : gaps.filter(g => g.gap > 0);
+                const good = planActual.nature === 'income' ? gaps.filter(g => g.gap > 0) : [...gaps].reverse().filter(g => g.gap < 0);
+                const say = (g: { name: string; gap: number; plan: number }) => `${g.name} (${fmt(Math.abs(g.gap))} ${side(g.gap)}${share(g.gap, g.plan, ', ', '')})`;
+                const badWord = planActual.nature === 'income' ? less : more;
+                const goodWord = planActual.nature === 'income' ? more : less;
+                points.unshift(bad.length
+                    ? `${count(bad.length)} of ${count(gaps.length)} ${pluralPhrase(grouping.label)} ${bad.length === 1 ? 'is' : 'are'} ${badWord} ${w}. Furthest: ${bad.slice(0, 3).map(say).join(', ')}.`
+                    : `No ${grouping.label} is ${badWord} ${w}.`);
+                if (good.length) points.splice(1, 0, `Furthest ${goodWord} ${w}: ${good.slice(0, 3).map(say).join(', ')}.`);
+                const label = planActual.nature === 'income' ? `${human(planActual.actual)} against ${w}` : `${more} ${w}`;
+                chart = { data: gaps.slice(0, 15).map(g => ({ [grouping.name]: g.name, [label]: Math.round(g.gap * 100) / 100 })), xKey: grouping.name, yKey: label, vis: 'horizontalBar', yLabel: capital(label), numberFormat: measure?.numberFormat || 'auto' };
+                ask = planActual.nature === 'income' ? `Which ${pluralPhrase(grouping.label)} are short of ${w}?` : `Which ${pluralPhrase(grouping.label)} are over ${w}?`;
+            }
+            const verb = planActual.nature === 'spending' ? 'Spent' : capital(human(planActual.actual));
+            findings.push({
+                id: 'plan', kind: 'plan', eyebrow: `Against ${w}`,
+                headline: `${verb}${planActual.nature === 'spending' ? '' : ' came to'} ${fmt(totalActual)} against a ${w} of ${fmt(totalPlan, planM)}: ${Math.abs(gap) < 0.005 ? `exactly on ${w}` : `${fmt(Math.abs(gap))} ${side(gap)}${share(gap, totalPlan)}`}.`,
+                points, chart, ask, score: 990,
+            });
+        }
     }
 
     // ── 2. trend ──
@@ -827,7 +884,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
     }
 
     // ── choose and order ──
-    const ORDER: StoryKind[] = ['overview', 'trend', 'anomaly', 'movers', 'breakdown', 'concentration', 'margin', 'contrast', 'relationship', 'quality'];
+    const ORDER: StoryKind[] = ['overview', 'plan', 'trend', 'anomaly', 'movers', 'breakdown', 'concentration', 'margin', 'contrast', 'relationship', 'quality'];
     const chosen = findings.filter(f => f.kind === 'overview' || f.kind === 'quality')
         .concat(findings.filter(f => f.kind !== 'overview' && f.kind !== 'quality').sort((a, b) => b.score - a.score).slice(0, 6));
     chosen.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || b.score - a.score);

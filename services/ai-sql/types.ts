@@ -572,6 +572,8 @@ export interface AISQLPipelineResult {
         contextTurns: number;
         /** The AI said it built on the earlier turns. */
         usedContext: boolean;
+        /** Other readings of the question, offered as one-tap questions instead of asking first. */
+        alternatives?: string[];
     };
     /** How this answer was produced. */
     provenance?: AIQueryProvenance;

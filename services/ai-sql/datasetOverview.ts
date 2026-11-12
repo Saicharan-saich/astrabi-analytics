@@ -54,7 +54,7 @@ export function storyChartToAnalysis(chart: StoryChart, insight: string): { anal
 export function buildDatasetOverview(dataset: Dataset, question = ''): DatasetOverview {
     const story = buildDataStory(dataset, question);
     const [overview, ...rest] = story.findings;
-    const pick = rest.find(f => f.kind === 'trend' && f.chart) || rest.find(f => f.chart);
+    const pick = rest.find(f => f.kind === 'plan' && f.chart) || rest.find(f => f.kind === 'trend' && f.chart) || rest.find(f => f.chart);
     const empty: StoryChart = { data: [], xKey: 'group', yKey: 'value', vis: 'bar', yLabel: '', numberFormat: 'auto' };
     const { analysis, formatting } = storyChartToAnalysis(pick?.chart || empty, overview?.headline || '');
     return {

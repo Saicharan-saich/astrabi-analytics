@@ -76,6 +76,15 @@ const FALLBACK_HELP = {
     message: 'Ask a question about your data in plain English. The AI sees only your column names and types, never your rows, and writes one read-only query that runs here in your browser. Follow-ups like "now by month" build on the last answer.',
 };
 
+/** "Give me the column names", "what fields do I have?": a list the app already holds. */
+const ASKS_COLUMNS = /^(?:please\s+|can you\s+|could you\s+)?(?:give|show|list|tell|name|display|print|get)\b(?:\s+me)?(?:\s+(?:all|the|my|every|a list of|list of))*\s+(?:the\s+)?(?:names? of (?:the |my |all )?(?:columns?|fields?|headers?|headings?)|(?:columns?|fields?|headers?|headings?|variables?)(?:\s+names?)?)(?:\s+(?:in|of|from|for)\s+(?:my|the|this)\s+(?:data|dataset|data ?set|file|sheet|spreadsheet|table))?[\s?.!]*$|^(?:what|which)\s+(?:are\s+)?(?:the\s+|my\s+|all the\s+)?(?:columns?|fields?|headers?|headings?)(?:\s+names?)?\b(?:\s+(?:are|do|does|is|have|has|there|i|we|in|of|my|the|this|data|dataset|file|sheet|spreadsheet|table|available|exist|mean|each|got))*[\s?.!]*$|^(?:columns?|fields?|headers?)(?:\s+names?)?[\s?.!]*$|^what (?:does|do) (?:each|every|the) columns? mean[\s?.!]*$/i;
+
+/** True when the message only asks which columns the data has. */
+export function asksForColumns(message: string): boolean {
+    return ASKS_COLUMNS.test(message.replace(/\s+/g, ' ').trim());
+}
+
+
 /**
  * Classify the message. `hasPreviousAnswer` is true when the chat already has
  * an answered question this message could build on.
@@ -85,6 +94,7 @@ export function classifyTurn(message: string, hasPreviousAnswer: boolean, datase
     if (GREETING.test(text)) return { kind: 'chat', reason: 'A greeting — the AI replies in words.', fallback: { title: 'Hello!', message: 'Ask me anything about your data — a total, a ranking, a comparison or a trend.' } };
     if (THANKS.test(text)) return { kind: 'chat', reason: 'A thank-you — the AI replies in words.', fallback: { title: 'You’re welcome', message: 'Ask another question whenever you are ready.' } };
     if (GOODBYE.test(text)) return { kind: 'chat', reason: 'A goodbye — the AI replies in words.', fallback: { title: 'See you soon', message: 'Your conversation is saved here.' } };
+    if (asksForColumns(text)) return { kind: 'summary', reason: 'A list of your columns, from what the app already knows. Nothing is sent to the AI.' };
     if (SUMMARY.test(text)) return { kind: 'summary', reason: 'An overview of the whole dataset.' };
     if (hasPreviousAnswer && EXPLAIN.test(text)) return { kind: 'explain', reason: 'Explains the last answer in plain words, on your computer.' };
 

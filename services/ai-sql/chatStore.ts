@@ -29,6 +29,8 @@ export interface ChatAnswer {
     executionTimeMs?: number;
     /** The local overview of the whole dataset (no SQL, no AI). */
     overview?: boolean;
+    /** Other readings of the question, offered as one-tap questions. */
+    alternatives?: string[];
     /** Every figure worked out again, independently, from the cleaned data. */
     check?: import('../answerCheck/answerCheck').AnswerCheck;
 }

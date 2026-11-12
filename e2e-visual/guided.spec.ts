@@ -183,3 +183,78 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `69-checked-online-columns-${theme}`);
     });
 }
+
+/** A budget workbook where some Marketing rows have a budget and no actual spending yet. */
+function budgetCsv(): Buffer {
+    const lines = ['Record ID,Month,Department,Expense Category,Budgeted Amount,Actual Spending,Variance'];
+    let id = 0;
+    for (let m = 0; m < 12; m++) for (const department of ['Marketing', 'Operations', 'IT']) for (const category of ['Payroll', 'Travel', 'Software']) {
+        const budgeted = 10000 + m * 100 + (category === 'Payroll' ? 5000 : 0);
+        const missing = department === 'Marketing' && category === 'Software' && m < 8;
+        const actual = budgeted + (department === 'Marketing' ? 1500 : department === 'Operations' ? 100 : -800);
+        lines.push(`B${++id},2025-${String(m + 1).padStart(2, '0')}-01,${department},${category},${budgeted},${missing ? '' : actual},${missing ? '' : budgeted - actual}`);
+    }
+    return Buffer.from(lines.join('\n'));
+}
+
+for (const theme of ['light', 'dark'] as const) {
+    test(`ai sql on a budget file ${theme}`, async ({ page }) => {
+        test.setTimeout(180_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'DASHBOARD');
+        // A stand-in for the AI: it subtracts totals and keeps only departments over budget,
+        // then (asked again) returns every department. Everything else runs for real.
+        const asked: string[] = [];
+        await page.route('**/api/llm/chat', async route => {
+            const body = route.request().postDataJSON() || {};
+            const text = (body.messages || []).map((m: any) => String(m.content)).join('\n');
+            const json = (content: unknown) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }], usage: { total_tokens: 900 } }) });
+            if (!/QUESTION\n|NEW MESSAGE\n/.test(text) || !/You are QuickInsight's data analyst/.test(text)) return route.fulfill({ status: 200, contentType: 'application/json', body: '{}', headers: { 'Access-Control-Allow-Origin': '*' } });
+            asked.push(text);
+            const everyone = /Return EVERY group/.test(text);
+            return json({
+                action: 'answer', title: 'Departments over budget', question: 'Which departments spent more than their budget, and by how much?',
+                sql: `SELECT "department", SUM("actual_spending") - SUM("budgeted_amount") AS overspend, SUM("budgeted_amount") AS total_budget FROM "data" GROUP BY 1${everyone ? '' : ' HAVING SUM("actual_spending") - SUM("budgeted_amount") > 0'} ORDER BY overspend DESC`,
+                dimensions: ['department'], measures: ['overspend', 'total_budget'], answer: 'overspend', judged_by: { column: 'actual_spending', worse: 'higher' },
+                explanation: 'Took actual spending minus budget for each department.', alternatives: ['Which departments have the largest budgets?', 'Which expense categories are over budget?'],
+            });
+        });
+        await go(page, 'Data Source');
+        await page.locator('input[type="file"][accept=".csv,.xlsx,.xls"]').first().setInputFiles({ name: 'department_budget.csv', mimeType: 'text/csv', buffer: budgetCsv() });
+        const ready = page.getByRole('dialog', { name: /ready for analysis/ });
+        await ready.waitFor({ timeout: 90000 });
+        await ready.getByRole('button', { name: 'Close' }).click();
+        await go(page, 'AI SQL');
+        const box = page.getByLabel('Ask a question about your data');
+        const ask = async (question: string) => {
+            await box.fill(question);
+            await page.waitForTimeout(300);
+            await box.press('Enter');
+            await page.locator('.qi-chat-thinking').waitFor({ state: 'detached', timeout: 30000 }).catch(() => {});
+            await page.waitForTimeout(1500);
+        };
+
+        // The column list comes from the app: no AI call, no query, no "partly checked".
+        await ask('give me column names');
+        const thread = page.locator('.qi-chat-thread, .qi-chat').first();
+        await expect(thread).toContainText('Your data has 7 columns');
+        await expect(thread).toContainText('worked out as variance = budgeted amount − actual spending');
+        expect(asked.length).toBe(0);
+        await shoot(page, `70-ai-sql-columns-${theme}`);
+
+        // Every department, worked out row by row: Marketing is over budget, not under.
+        await ask('Which departments are overspending?');
+        await expect(thread).toContainText('Marketing is 42,000 over budget', { timeout: 30000 });
+        await expect(thread).toContainText('IT is 28,800 under budget');
+        await expect(thread).toContainText('8 rows have a budgeted amount but no actual spending');
+        await expect(page.locator('.qi-chat-alternatives')).toContainText('Which departments have the largest budgets?');
+        expect(asked.length).toBe(2);
+        await page.locator('.qi-chat-alternatives').scrollIntoViewIfNeeded();
+        await shoot(page, `71-ai-sql-overspend-${theme}`);
+
+        // The overview leads with spending against budget.
+        await ask('Give me a summary of the dataset please');
+        await expect(thread).toContainText(/Spent .* against a budget of/);
+        await shoot(page, `72-ai-sql-budget-overview-${theme}`);
+    });
+}

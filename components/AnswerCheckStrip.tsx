@@ -51,7 +51,7 @@ export function AnswerCheckStrip({ check: given, onRun, running, readAs, reading
         <div className={`qi-check is-${check.status}`} role={check.status === 'mismatch' ? 'alert' : 'status'}>
             <div className="qi-check-line">
                 <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                <p><strong>{check.status === 'warning' && !check.figuresChecked ? 'Check' : LABEL[check.status]}:</strong> {check.headline}</p>
+                <p><strong>{check.status === 'warning' && !check.figuresChecked ? 'Check' : LABEL[check.status]}:</strong> {check.headline.replace(/^(Partly checked|Figures checked|Check failed|Check):\s*/i, '').replace(/^./, c => c.toUpperCase())}</p>
                 {hasDetail && (
                     <button type="button" className="qi-check-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}>
                         {open ? 'Hide' : 'How it was checked'} <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />

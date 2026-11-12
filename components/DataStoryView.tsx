@@ -15,7 +15,7 @@ interface DataStoryViewProps {
 
 const ICONS: Record<StoryKind, React.ComponentType<{ className?: string }>> = {
   overview: LayoutDashboard, trend: TrendingUp, anomaly: Zap, movers: ArrowUpDown, breakdown: PieChart,
-  concentration: Crown, margin: Percent, contrast: Scale, relationship: Link2, quality: ShieldAlert,
+  concentration: Crown, margin: Percent, contrast: Scale, plan: Scale, relationship: Link2, quality: ShieldAlert,
 };
 
 /**

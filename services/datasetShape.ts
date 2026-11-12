@@ -17,6 +17,7 @@ import { isAdditiveName, isCoordinateName, isPerRowName } from '../utils/numberM
 import { findLineColumns } from './etlMeasureIntegrity';
 import { findColumnFormulas, describeFormula, type ColumnFormula } from '../utils/columnFormulas';
 import { spokenName } from '../utils/spokenName';
+import { unevenBlankPairs, unevenBlankLine, type UnevenPair } from '../utils/unevenBlanks';
 
 export type DatasetKind = 'hybrid' | 'records' | 'measures';
 
@@ -60,6 +61,8 @@ export interface DatasetShape {
     signedAmounts: string[];
     /** How number columns are worked out from each other ("variance" = "budget" − "actual"). */
     formulas: ColumnFormula[];
+    /** Pairs of amounts where some rows have one figure and not the other (an actual with no budget). */
+    unevenBlanks: UnevenPair[];
     /** What one row is, in words: "appointment". */
     recordWord: string;
     /** The same, plural: "appointments". */
@@ -254,6 +257,12 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     // How number columns are worked out from each other, checked on the rows here.
     let formulas: ColumnFormula[] = [];
     try { formulas = findColumnFormulas(rows, [...amounts, ...perRowNumbers]); } catch { formulas = []; }
+    // Amounts with gaps that do not line up (first-row order amounts are a different thing: they are meant to be blank).
+    let unevenBlanks: UnevenPair[] = [];
+    try { unevenBlanks = unevenBlankPairs(rows, amounts.filter(name => !firstRowAmounts.includes(name))); } catch { unevenBlanks = []; }
+    // Pairs the file itself sets against each other (a variance worked out from them) come first.
+    const linked = (pair: UnevenPair) => formulas.some(f => [f.a, f.b, f.result].includes(pair.a) && [f.a, f.b, f.result].includes(pair.b)) ? 0 : 1;
+    unevenBlanks.sort((x, y) => linked(x) - linked(y));
     const naturallySigned = new Set(formulas.filter(f => f.kind === 'difference' || f.kind === 'change' || f.kind === 'change_percent' || f.kind === 'margin' || f.kind === 'margin_percent').map(f => f.result));
     const signedAmounts = amounts.filter(name => {
         // A variance, a profit or a change is negative by nature, not because of refunds.
@@ -296,7 +305,7 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     let shape: DatasetShape;
     if (kind === 'records') {
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas, unevenBlanks,
             label: 'Records — nothing to add up',
             summary: `Each row is one ${recordWord}, described by ${describedText}. There are no amounts such as sales or cost.`,
             howMeasured: `QuickInsight measures it by counting ${recordsWord}${entity ? ` and distinct ${entity}` : ''}, and by the share of ${recordsWord} with each answer${outcome ? ` (for example the % that ${outcomeWords})` : ''}${perRowNumbers.length ? `; ${list(perRowNumbers, 2, numberName)} ${perRowNumbers.length === 1 ? 'is' : 'are'} averaged or put into ranges` : ''}.`,
@@ -304,14 +313,14 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     } else if (kind === 'measures') {
         const numbers = [...amounts, ...perRowNumbers];
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas, unevenBlanks,
             label: 'Numbers only',
             summary: `Mostly numbers (${list(numbers)}), with nothing to group them by${dates.length ? ' except the date' : ''}.`,
             howMeasured: `QuickInsight looks at totals and averages${dates.length ? ', how they change over time' : ''}, their ranges, and which numbers move together.`,
         };
     } else {
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas, unevenBlanks,
             label: amounts.length ? 'Amounts and categories' : 'Scores and categories',
             summary: `${amounts.length ? `Amounts you can add up (${list(amounts, 3)})` : `Measured numbers (${list(perRowMetrics, 3)})`} and ${[...categories, ...yesNo].length === 1 ? 'a category' : 'categories'} to split them by (${list([...categories, ...yesNo.map(flagSubject)], 3)}).`,
             howMeasured: `QuickInsight ${amounts.length ? 'adds up and averages the amounts' : 'averages the numbers'}, split by the categories${dates.length ? ' and over time' : ''}${outcome ? `, and compares the share that ${outcomeWords}` : ''}.`,
@@ -341,6 +350,8 @@ export function shapeForModel(shape: DatasetShape, yesTest: (column: string) => 
     if (otherIds.length) lines.push(`${otherIds.map(q).join(', ')} repeat${otherIds.length === 1 ? 's' : ''}: one ${idWord(otherIds[0])} can have several rows. Count them with COUNT(DISTINCT ...).`);
     for (const name of shape.customerKeys) lines.push(`${q(name)} identifies the customer and repeats when they come back: count customers with COUNT(DISTINCT ${q(name)}) (blank = no customer recorded).`);
     if (shape.formulas?.length) lines.push(`How columns are worked out (checked on every row of this data): ${shape.formulas.map(describeFormula).join('; ')}. Use these to tell which way a difference goes.`);
+    const uneven = unevenBlankLine(shape.unevenBlanks || []);
+    if (uneven) lines.push(uneven);
     if (shape.signedAmounts.length) lines.push(`Some rows have a negative ${shape.signedAmounts.map(q).join(', ')} (refunds, returns or corrections). Plain SUM gives the figure after them; leave negative rows out only when the question asks for sales before refunds.`);
     if (shape.kind === 'records') {
         lines.push('There are no amounts: never SUM an ID, a yes/no or a category. Measure with:');

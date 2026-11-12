@@ -28,7 +28,8 @@ import { AISQLPipelineError } from './pipelineError';
 import { resolveAISQLSemanticModel } from './semanticLayer';
 import { discoverJoinContext } from './joinEngine';
 import { duckTableName, queryTablesOf } from '../../utils/duckColumnType';
-import { judgedAgainstMeaning, readingTurnedAround, turnAroundRepair } from './readingCheck';
+import { judgedAgainstMeaning, readingTurnedAround, turnAroundRepair, oneSidedFilter, ONE_SIDED_REPAIR } from './readingCheck';
+import { rowWiseDifferences, unevenBlankPairs, unevenBlankNote } from '../../utils/unevenBlanks';
 import { carriedFilters, carriedFilterRepair, describeCarried, keptFilters } from './carriedFilters';
 import { dictionaryForPrompt, goodDirectionOf } from '../columnDictionary';
 import { discoverRelationships, detectCandidateKeys } from './relationshipDiscovery';
@@ -113,7 +114,7 @@ export type LeanModelReply =
     | { action: 'clarify'; question: string; options: ClarificationOption[] }
     | { action: 'chat'; message: string; suggestions: string[] }
     | { action: 'overview' }
-    | { action: 'answer'; title?: string; sql: string; dimensions?: string[]; measures?: string[]; answer?: string; judgedBy?: { column: string; worse: 'higher' | 'lower' }; explanation?: string; question?: string; followUp?: boolean };
+    | { action: 'answer'; title?: string; sql: string; dimensions?: string[]; measures?: string[]; answer?: string; alternatives?: string[]; judgedBy?: { column: string; worse: 'higher' | 'lower' }; explanation?: string; question?: string; followUp?: boolean };
 
 // ── Prompt ───────────────────────────────────────────────────────────
 
@@ -130,6 +131,7 @@ Ask (action "clarify") when ANY of these is true:
 - The question has nothing specific to analyse ("show me insights", "what's interesting?", "analyse this").
 - The answer depends on what a column marked NOT CONFIRMED in the COLUMN MEANINGS means (an abbreviation or internal code nobody has explained) and the question itself does not explain it. Ask what that column holds, offering the likely readings as options. A NOT CONFIRMED column the answer only groups or lists by needs no question.
 Do NOT ask when the question names its measure ("top products by revenue", "average price by make", "how many orders per month") or when only one measure could sensibly be meant.
+Do NOT ask when the words have an everyday meaning, even if other readings exist: "spending the most" is the largest actual spending, "selling the most" the most sold, "earning the most" the most revenue, "biggest customer" the one who spent the most, "busiest" the most orders or visits. Answer the everyday reading, say which reading you took in "explanation", and put up to 3 other readings in "alternatives" as complete questions, so the person can switch with one tap instead of being stopped by a question.
 When the DATA SHAPE says there is nothing to add up, the measures are counts, rates of the yes/no columns and averages of the numbers; if it names the result being tracked, a vague question ("what matters most?", "insights") is usually about that rate — offer options that compare it by different columns.
 For a follow-up give 2 to 4 options. Each option must be a complete, specific question you would answer without asking again, naming the exact measure and grouping from the data, e.g. "Top 10 products by total revenue". Put the most likely option first. Keep the follow-up question short and friendly.
 
@@ -161,6 +163,7 @@ STEP 2 — Otherwise answer (action "answer").
   - Work a difference out so it points the way the question asks (e.g. how far each group is worse than plan), following any formula under "How columns are worked out"; never guess a sign from a column name. Name the result for what it means (overspend, shortfall, late_orders), return every group worst first, and say what you judged by in "judged_by".
   - In general business terms a loss is money spent above budget, or money earned below target, or a profit below 0; spending below budget is a saving, not a loss.
   - When no column meaning says which way is better for what the question asks, ask (clarify) instead of guessing.
+- When the person disagrees with an earlier answer or quotes their own figure ("you are wrong, marketing is -39k"), you cannot know who is right: you have not seen the data. Never say they are right or wrong. Show the figures so they can check: every group, with the file's own column as it is stored (for example the total of its variance column) beside the figure worked out from the columns it comes from, and say in "explanation" what each one is.
 - You do not know the values stored in text columns. Match text the user typed case-insensitively, e.g. LOWER("region") = LOWER('london'), or ILIKE '%term%' for partial names.
 - Highest and lowest (or best and worst, top and bottom) item per group or period, e.g. "month-wise highest and lowest sales for products": return ONE row per group with columns named like period, highest_product, highest_total_sales, lowest_product, lowest_total_sales (use QUALIFY/ROW_NUMBER or ARG_MAX/ARG_MIN). Always include the item's name, not just the number.
 - Listing records: return only the useful columns with LIMIT 200.
@@ -174,7 +177,7 @@ Plain words for the person reading (they are not technical):
 - Follow-up options in "clarify" are plain questions a person would ask.
 
 Return ONLY one JSON object, no prose:
-{"action":"answer","title":"short plain-English chart title","question":"the full question you answered, written so it makes sense on its own","sql":"SELECT ...","dimensions":["grouping output column"],"measures":["measure output column"],"answer":"the one measure output column that answers the question","judged_by":{"column":"the data column a judgement word was judged by (omit when the question has none)","worse":"higher|lower"},"explanation":"one sentence: what was calculated, including any assumption"}
+{"action":"answer","title":"short plain-English chart title","question":"the full question you answered, written so it makes sense on its own","sql":"SELECT ...","dimensions":["grouping output column"],"measures":["measure output column"],"answer":"the one measure output column that answers the question","judged_by":{"column":"the data column a judgement word was judged by (omit when the question has none)","worse":"higher|lower"},"explanation":"one sentence: what was calculated, including any assumption","alternatives":["another reading of the question, as a complete question (omit when there is none)"]}
 or
 {"action":"clarify","question":"short follow-up","options":[{"label":"Total revenue","question":"Top 10 products by total revenue"}]}
 or
@@ -242,6 +245,7 @@ export function parseLeanReply(content: string): LeanModelReply {
             ? { column: raw.judged_by.column.replace(/^"|"$/g, ''), worse: raw.judged_by.worse } : undefined,
         explanation: typeof raw.explanation === 'string' ? unsnake(raw.explanation.trim()).slice(0, 400) : undefined,
         question: typeof raw.question === 'string' && raw.question.trim() ? raw.question.trim().slice(0, 300) : undefined,
+        alternatives: Array.isArray(raw.alternatives) ? raw.alternatives.map((item: unknown) => unsnake(String(item).trim()).slice(0, 200)).filter(Boolean).slice(0, 3) : undefined,
         followUp: typeof raw.follow_up === 'boolean' ? raw.follow_up : typeof raw.followUp === 'boolean' ? raw.followUp : undefined,
     };
 }
@@ -902,6 +906,33 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         const kept = keptFilters(parsed.sql, earlierSql);
         if (kept.length) carriedCaution = `Kept from your earlier question: only rows where ${describeCarried(kept)}.`;
     }
+    // ── 1d. Only one side of a judgement shown? "Which departments are overspending?" answered
+    // with a filter that hides everyone under budget reads as if nobody else was looked at.
+    // Every group is returned, worst first, and the words say who is on which side.
+    // (Asked again at most once per question: not after a re-read or a carried filter.)
+    const oneSided = !turned && !carried.length && oneSidedFilter(parsed.sql, question);
+    if (oneSided) {
+        options.onProgress?.('Looking at every group');
+        const again = await fetchWithFallback([
+            { role: 'system', content: context.length ? `${LEAN_SYSTEM_PROMPT}${LEAN_CONTEXT_RULES}` : LEAN_SYSTEM_PROMPT },
+            { role: 'user', content: `${userContent}\n\n${ONE_SIDED_REPAIR}` },
+        ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
+        tokens += Number(again.data?.usage?.total_tokens) || 0;
+        const second = parseLeanReply(again.data?.choices?.[0]?.message?.content || '');
+        if (second.action === 'answer' && !oneSidedFilter(second.sql, question) && !carriedFilters(question, second.sql, earlierSql).length
+            && !againstMeaning(second) && !readingTurnedAround(question, second.question || second.title)) Object.assign(parsed, second);
+    }
+    // ── 1e. A difference between two columns is worked out row by row when some rows have one
+    // figure and not the other: SUM(actual) − SUM(budget) would set different rows against each other.
+    let unevenCaution: string | null = null;
+    if (/\bSUM\s*\(/i.test(parsed.sql) && /-/.test(parsed.sql)) {
+        try {
+            const numbers = dataset.columns.filter(column => column.type === ColumnType.METRIC).map(column => column.name);
+            const rowWise = rowWiseDifferences(parsed.sql, unevenBlankPairs(dataset.rows, numbers));
+            parsed.sql = rowWise.sql;
+            unevenCaution = unevenBlankNote(rowWise.used);
+        } catch { /* the query stands as written */ }
+    }
     // The standalone question is what later follow-ups and the repair use.
     const standalone = parsed.question || question;
 
@@ -938,7 +969,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
 
     options.onProgress?.('Checking the numbers');
     const series = completeTimeSeries(sql, execution.data || [], parsed, model.timeContext, dataset);
-    const cautions = [...(carriedCaution ? [carriedCaution] : []), ...(readingCaution ? [readingCaution] : []), ...await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext, `${question} ${standalone}`), ...series.notes];
+    const cautions = [...(carriedCaution ? [carriedCaution] : []), ...(readingCaution ? [readingCaution] : []), ...(unevenCaution ? [unevenCaution] : []), ...await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext, `${question} ${standalone}`), ...series.notes];
     options.onProgress?.('Choosing the chart');
     const result = buildLeanAnswer({
         question: standalone, sql, rows: series.rows, reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model, originalQuestion: question, cautions,
@@ -948,6 +979,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         contextTurns: context.length,
         // The AI's own judgement: it built on the earlier chat only if it says so.
         usedContext: context.length > 0 && parsed.followUp === true,
+        ...(parsed.alternatives?.length ? { alternatives: parsed.alternatives.filter(item => item.toLowerCase() !== standalone.toLowerCase()) } : {}),
     };
     return result;
 }

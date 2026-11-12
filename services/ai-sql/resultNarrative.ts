@@ -369,7 +369,7 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
         const isRate = type === 'percentage' || RATE_NAME.test(metric);
         // A gap between two figures (an overspend, a shortfall, a variance): say which groups
         // are on which side of zero, never "X% higher" — a percentage of a gap means nothing.
-        if (GAP_NAME.test(metric) && ranked.length >= 2) {
+        if (GAP_NAME.test(metric) && (ranked.length >= 2 || (ranked.length === 1 && LOSS_NAME.test(metric)))) {
             const word = plainName(dimension);
             const Label = label.charAt(0).toUpperCase() + label.slice(1);
             const show = (row: Record<string, any>) => `${groupName(row, dimension)} (${formatValue(row[metric], type)})`;

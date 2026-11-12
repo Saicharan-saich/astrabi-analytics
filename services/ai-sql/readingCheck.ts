@@ -55,3 +55,27 @@ export function judgedAgainstMeaning(judgedBy: { column: string; worse: 'higher'
 export function turnAroundRepair(turned: TurnedAround, reading: string): string {
     return `Your reading of the question ("${reading}") ${turned.asked.startsWith('the column meanings') ? `takes ${turned.read}` : `is about ${turned.read}`}, but that goes against ${turned.asked.startsWith('the column meanings') ? turned.asked : `what the person asked about: ${turned.asked}`}. Answer the question the way it was asked: judge by the COLUMN MEANINGS (which way is good, what below 0 means, what people call it), follow any formula under "How columns are worked out", name the result for what it means, return every group worst first, and fill "judged_by".`;
 }
+
+/**
+ * "Which departments are overspending?" answered with HAVING overspend > 0
+ * returns one row and reads as if the others were never looked at — and if
+ * the person believes another department is over, there is nothing to see.
+ * True when the query keeps only the groups whose result is on one side of
+ * zero and the question did not ask for a count or for "only" those.
+ */
+export function oneSidedFilter(sql: string, question: string): boolean {
+    if (!/\bGROUP\s+BY\b/i.test(sql)) return false;
+    if (/^\s*(how many|count|number of)\b/i.test(question) || /\b(only|just|exclud\w+|leave out|without)\b/i.test(question)) return false;
+    const body = sql.replace(/--[^\n]*/g, ' ');
+    // HAVING <something> > 0, >= 0, < 0, <= 0, <> 0 on a result of the grouping.
+    if (/\bHAVING\b[^;]*?(?:<>|!=|[<>]=?)\s*-?0(?:\.0+)?\b(?!\s*\.\d)/i.test(body)) return true;
+    // The same filter written outside: WITH t AS (… GROUP BY …) SELECT … FROM t WHERE overspend > 0
+    const aliases = [...body.matchAll(/\bAS\s+("?)([A-Za-z_][A-Za-z0-9_]*)\1/gi)].map(m => m[2].toLowerCase());
+    for (const m of body.matchAll(/\bWHERE\s+("?)([A-Za-z_][A-Za-z0-9_]*)\1\s*(?:<>|!=|[<>]=?)\s*-?0(?:\.0+)?\b(?!\s*\.\d)/gi)) {
+        if (aliases.includes(m[2].toLowerCase())) return true;
+    }
+    return false;
+}
+
+/** Sent back to the AI when its query keeps only one side. */
+export const ONE_SIDED_REPAIR = 'Your query keeps only the groups on one side of zero (a HAVING or WHERE that compares the result with 0). Return EVERY group, ordered worst first, with no such filter: the answer itself says which groups are over and which are under, so the person can see that the others were checked too.';

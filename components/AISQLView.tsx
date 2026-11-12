@@ -7,6 +7,7 @@ import {
 import { DataKindNote } from './DataKindNote';
 import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
 import type { AISQLPipelineResult } from '../services/ai-sql';
+import { asksForColumns, columnsAnswer } from '../services/ai-sql/columnsAnswer';
 import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError, AISQLChatReplyError, AISQLOverviewRequest } from '../services/ai-sql/leanPipeline';
 import { explainAnswer } from '../services/ai-sql/explainAnswer';
 import { buildDatasetOverview } from '../services/ai-sql/datasetOverview';
@@ -242,6 +243,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             updateTurn(conversationId, userId, { kind: 'summary' });
             updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, ...(lead ? { reply: { message: lead } } : {}), ...(answer ? { answer } : {}) });
         };
+        // "Give me the column names": said here from what the app knows about the columns. No AI, no query.
+        if (!forced && asksForColumns(text)) {
+            updateTurn(conversationId, userId, { kind: 'summary' });
+            updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: columnsAnswer(dataset) });
+            return;
+        }
         if (route === 'summary') { showOverview(); return; }
         // "What does that mean?": explained here from the last answer, numbers included, no AI.
         if (route === 'explain') {
@@ -341,6 +348,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 listOnly,
                 tokens,
                 executionTimeMs: result.executionTimeMs,
+                alternatives: result.conversation?.alternatives,
             };
             updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, answer });
             updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + tokens }));
@@ -478,7 +486,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     // Follow-up chips only right after a query answer (not after a reply in
     // words, and not after the overview, which has no query to build on).
     const lastAssistantTurn = [...(active?.turns || [])].reverse().find(turn => turn.role === 'assistant');
-    const followUps = lastAssistantTurn?.answer?.sql && !busy ? suggestFollowUps(lastAssistantTurn.answer, dataset) : [];
+    const alternatives = lastAssistantTurn?.answer?.sql && !busy ? (lastAssistantTurn.answer.alternatives || []) : [];
+    const followUps = lastAssistantTurn?.answer?.sql && !busy ? suggestFollowUps(lastAssistantTurn.answer, dataset).filter(item => !alternatives.includes(item)) : [];
     const history = conversations.filter(conversation => conversation.turns.length > 0).sort((a, b) => b.updatedAt - a.updatedAt);
     const groups = history.reduce<Record<string, Conversation[]>>((acc, conversation) => {
         const label = whenLabel(conversation.updatedAt);
@@ -764,6 +773,16 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             </div>
                         ))}
 
+                        {alternatives.length > 0 && (
+                            <div className="qi-chat-followups qi-chat-alternatives" aria-label="Other ways to read your question">
+                                <span className="qi-chat-alternatives-label">Did you mean something else?</span>
+                                {alternatives.map(suggestion => (
+                                    <button key={suggestion} type="button" onClick={() => void send(suggestion, 'analysis')}>
+                                        <CornerDownRight className="h-3.5 w-3.5" aria-hidden /> {suggestion}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         {followUps.length > 0 && (
                             <div className="qi-chat-followups" aria-label="Suggested follow-ups">
                                 {followUps.map(suggestion => (
