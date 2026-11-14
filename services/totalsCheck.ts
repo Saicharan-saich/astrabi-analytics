@@ -102,13 +102,19 @@ const formatAmount = (n: number) => {
     const rounded = Math.round(n * 100) / 100;
     return rounded.toLocaleString('en-GB', { maximumFractionDigits: Number.isInteger(rounded) ? 0 : 2 });
 };
+/** "budgeted_amount" → "Budgeted amount", so the sentence reads as words. */
+const label = (column: string) => {
+    const words = column.replace(/[_\s]+/g, ' ').trim();
+    return words ? words[0].toUpperCase() + words.slice(1) : column;
+};
+const formatSigned = (n: number) => `${n < 0 ? '−' : ''}${formatAmount(Math.abs(n))}`;
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${formatAmount(Math.abs(n))}`;
 
 /** One plain sentence per measure, for the cleaning review. */
 export function describeTotals(check: TotalsCheck): { matches: boolean; lines: string[] } {
     if (!check.measures.length) return { matches: true, lines: [] };
     if (!check.differences.length) {
-        const shown = check.measures.slice(0, 4).map(m => `${m.column} ${formatAmount(m.cleaned)}`).join(', ');
+        const shown = check.measures.slice(0, 4).map(m => `${label(m.column)} ${formatSigned(m.cleaned)}`).join(', ');
         return { matches: true, lines: [`Every total matches the file: ${shown}${check.measures.length > 4 ? ` and ${check.measures.length - 4} more` : ''}.`] };
     }
     const lines = check.differences.map(m => {
@@ -119,7 +125,7 @@ export function describeTotals(check: TotalsCheck): { matches: boolean; lines: s
         if (m.blanked.cells) parts.push(`${m.blanked.cells} number${m.blanked.cells === 1 ? '' : 's'} adding up to ${formatAmount(m.blanked.amount)} became blank`);
         if (m.changed.cells) parts.push(`${m.changed.cells} number${m.changed.cells === 1 ? ' was' : 's were'} changed (${signed(m.changed.amount)} in all)`);
         const from = m.uploaded ?? m.beforeValues;
-        return `${m.column}: the file adds up to ${formatAmount(from)}, the cleaned data to ${formatAmount(m.cleaned)} (${signed(m.cleaned - from)})${parts.length ? ` — ${parts.join('; ')}` : ''}.`;
+        return `${label(m.column)}: the file adds up to ${formatSigned(from)}, the cleaned data to ${formatSigned(m.cleaned)} (${signed(m.cleaned - from)})${parts.length ? ` — ${parts.join('; ')}` : ''}.`;
     });
     return { matches: false, lines };
 }

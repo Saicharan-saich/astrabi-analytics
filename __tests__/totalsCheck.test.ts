@@ -48,7 +48,7 @@ describe('totals check after cleaning', () => {
         const { logs } = runETLPipeline(rows, 'department_budget.csv');
         const check = totalsLog(logs);
         expect(check.status).toBe('applied');
-        expect(check.details).toMatch(/^Every total matches the file: /);
+        expect(check.details).toMatch(/^Every total matches the file: Budgeted amount 1,319,400, Actual spending 1,253,400, Variance −16,800\.$/);
     });
 
     it('reports, in money, numbers that were removed or changed', () => {
@@ -59,14 +59,14 @@ describe('totals check after cleaning', () => {
         expect(check.differences[0]).toMatchObject({ uploaded: 1000034, cleaned: 40, blanked: { cells: 1, amount: 999999 }, changed: { cells: 1, amount: 5 } });
         const { matches, lines } = describeTotals(check);
         expect(matches).toBe(false);
-        expect(lines[0]).toBe('a: the file adds up to 1,000,034, the cleaned data to 40 (−999,994) — 1 number adding up to 999,999 became blank; 1 number was changed (+5 in all).');
+        expect(lines[0]).toBe('A: the file adds up to 1,000,034, the cleaned data to 40 (−999,994) — 1 number adding up to 999,999 became blank; 1 number was changed (+5 in all).');
     });
 
     it('explains totals changed by tidying the layout (for example a removed total row)', () => {
         const uploaded = [{ Amount: 10 }, { Amount: 20 }, { Amount: 30 }];
         const tidied = [{ amount: 10 }, { amount: 20 }];
         const check = checkTotals(uploaded, tidied, tidied, ['amount'], () => 'Amount');
-        expect(describeTotals(check).lines[0]).toMatch(/the file adds up to 60, the cleaned data to 30 \(−30\) — tidying the layout \(total rows, repeated headers, copies\) changed it by −30\./);
+        expect(describeTotals(check).lines[0]).toMatch(/^Amount: the file adds up to 60, the cleaned data to 30 \(−30\) — tidying the layout \(total rows, repeated headers, copies\) changed it by −30\./);
     });
 
     it('works on any measure name, with nothing assumed about the file', () => {
