@@ -1,0 +1,10 @@
+{
+  "_note": "The only place a public accuracy figure can come from. Add every full live run of the question suite (open the site with ?qi-accuracy and run __qiAccuracy.start({ suite: 'owner' })). A figure is shown only when the latest runs in a row all reach the threshold; until then the site makes no accuracy claim.",
+  "threshold": 0.98,
+  "consecutiveRuns": 2,
+  "minimumQuestions": 75,
+  "runs": [
+    { "date": "2026-11", "suite": "owner", "passed": 72, "total": 77, "note": "full live run" },
+    { "date": "2026-11", "suite": "owner", "passed": 72, "total": 77, "note": "full live run, different questions failed" }
+  ]
+}

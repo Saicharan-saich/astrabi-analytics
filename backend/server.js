@@ -66,6 +66,9 @@ const billingService = createBillingService({
     getPool: () => authPool,
     appUrl: () => process.env.APP_URL || process.env.FRONTEND_URL || 'https://quickinsight.co.uk',
 });
+const { createClientErrorService, registerClientErrorRoutes } = require('./clientErrors');
+// Error reports from browsers (quoted text removed), kept 30 days.
+const clientErrorService = createClientErrorService({ getPool: () => authPool });
 
 // ═══════════════════════════════════════════
 // POSTGRESQL USER PERSISTENCE
@@ -137,6 +140,7 @@ async function initAuthDatabase() {
         console.log('[Auth] PostgreSQL users table ready');
         await accountService.ensureTables();
         await billingService.ensureTables();
+        await clientErrorService.ensureTables();
 
         // Create usage_logs table for tracking AI consumption per user
         await authPool.query(`
@@ -403,6 +407,7 @@ const apiKeyMiddleware = (req, res, next) => {
         || req.path.startsWith('/auth/')
         || req.path === '/billing/webhook'
         || req.path === '/billing/plans'
+        || req.path === '/client-errors'
         || req.path === '/api/health'
         || req.path === '/api/ready'
         || req.path.startsWith('/api/auth/');
@@ -663,6 +668,11 @@ registerAccountRoutes(app, accountService, {
     onSignedOutEverywhere: (userId) => connectionVault.forget(userId),
 });
 registerBillingApi();
+registerClientErrorRoutes(app, clientErrorService, {
+    rateLimit,
+    optionalUser: (req) => extractUser(req),
+    requireAdmin: (req) => extractCurrentAdmin(req),
+});
 
 // Store active connections
 // Value: { type: 'mssql'|'raw'|'pg', pool: ConnectionPool|PgPool, rawConn: Connection, config: Object }
@@ -2343,8 +2353,8 @@ const connectionReaper = setInterval(() => {
 connectionReaper.unref?.();
 
 // Keep logs only as long as the privacy policy says (see accounts.js purgeOldRecords).
-const runRetention = () => accountService.purgeOldRecords()
-    .then(removed => { if (removed) console.log('[Retention] Removed old records:', JSON.stringify(removed)); })
+const runRetention = () => Promise.all([accountService.purgeOldRecords(), clientErrorService.purge(30)])
+    .then(([removed, errors]) => { if (removed) console.log('[Retention] Removed old records:', JSON.stringify({ ...removed, client_errors: errors })); })
     .catch(error => console.error('[Retention] Clean-up failed:', error.message));
 const retentionStart = setTimeout(runRetention, 60 * 1000);
 retentionStart.unref?.();

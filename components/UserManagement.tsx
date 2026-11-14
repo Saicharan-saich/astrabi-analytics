@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { UserRole } from '../types';
+import { AdminErrorReports } from './AdminErrorReports';
 import { UserPlus, Trash2, Shield, Edit2, X, Check, Users, Crown, Eye, Pencil, AlertCircle, LogOut, Loader2 } from 'lucide-react';
 
 interface UserManagementProps {
@@ -435,6 +436,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                         </div>
                     </div>
                 )}
+
+                <div className="overflow-y-auto shrink">
+                    <AdminErrorReports apiBase={API_BASE} />
+                </div>
 
                 {/* Role Legend */}
                 <div className="border-t border-white/5 px-6 py-3 bg-slate-950/50 shrink-0">

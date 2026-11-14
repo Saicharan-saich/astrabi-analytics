@@ -7,6 +7,7 @@
 import { useEffect, useRef } from 'react';
 import { Check, Lock, ShieldCheck, X } from 'lucide-react';
 import plansFile from '../backend/plans.json';
+import { publicAccuracyClaim } from '../config/accuracyClaim';
 
 interface Plan {
     id: string;
@@ -68,6 +69,8 @@ export function PricingDialog({ onClose, onStart }: { onClose: () => void; onSta
                     <li><ShieldCheck className="h-3.5 w-3.5" aria-hidden />The AI sees your question, column names and summaries, not your rows.</li>
                     <li><Check className="h-3.5 w-3.5" aria-hidden />Every AI answer shows the checks it passed, and you can open the exact query it ran.</li>
                     <li><Check className="h-3.5 w-3.5" aria-hidden />Cancel any time. Download or delete your data whenever you like.</li>
+                    {/* Shown only once live test runs meet the bar in config/accuracyClaim.json. */}
+                    {publicAccuracyClaim && <li><Check className="h-3.5 w-3.5" aria-hidden />{publicAccuracyClaim}</li>}
                 </ul>
 
                 <div className="qi-plan-actions">

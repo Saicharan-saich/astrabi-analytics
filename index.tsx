@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 import { MotionConfig } from 'framer-motion';
 import App from './App';
 import './visual-presentation.css';
+import { installErrorReporter } from './services/errorReporter';
+
+// Crashes in the browser are reported (quoted text removed) so they get fixed.
+if (import.meta.env.PROD && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) installErrorReporter();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

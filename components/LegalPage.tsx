@@ -169,6 +169,7 @@ const PrivacyPolicy: React.FC = () => (
             'Browser data (IndexedDB, localStorage): controlled entirely by you — clearing your browser data removes it',
             'Dashboard configurations: retained while your account is active',
             'AI request logs: automatically purged after 30 days',
+            'Error reports (what went wrong and where in our code, with quoted text, email addresses and long numbers removed): deleted after 30 days',
         ]} />
 
         <SectionTitle emoji="✅" title="8. Your Rights (UK GDPR)" />
