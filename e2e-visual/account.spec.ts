@@ -45,6 +45,12 @@ for (const theme of ['light', 'dark'] as const) {
         const dialog = page.getByRole('dialog', { name: 'Your account' });
         await expect(dialog).toBeVisible();
         await expect(dialog).toContainText('Download my data');
+        // Plan, trial and payment (Stripe) sit in the same place.
+        await expect(dialog.getByRole('heading', { name: 'Solo plan' })).toBeVisible();
+        await expect(dialog).toContainText('Free trial: 10 days left.');
+        await expect(dialog).toContainText('AI questions today: 3 of 50.');
+        await expect(dialog.getByRole('button', { name: /Choose Team/ })).toBeVisible();
+        await shoot(page, `76-your-plan-${theme}`);
         await dialog.getByRole('button', { name: /Delete my account/ }).first().click();
         await expect(dialog).toContainText("It can't be undone");
         await expect(dialog.getByRole('button', { name: 'Delete my account' }).last()).toBeDisabled();

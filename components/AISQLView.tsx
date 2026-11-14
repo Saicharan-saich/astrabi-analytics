@@ -267,8 +267,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             updateTurn(conversationId, assistantId, {
                 status: 'error', progress: undefined,
                 error: {
-                    title: 'AI SQL unavailable',
-                    message: status.blocked ? 'Your account role does not have access to AI SQL.' : `You've used all ${status.limit} AI SQL queries. Your limit resets in ${formatResetTime(status.resetsInMs)}.`,
+                    title: status.needsAccount ? 'Create a free account to ask the AI' : 'AI SQL unavailable',
+                    message: status.needsAccount
+                        ? 'Asking the AI needs a free account. Your file stays on this computer: sign out of guest mode and choose Register.'
+                        : status.blocked ? 'Your account role does not have access to AI SQL.' : `You've used all ${status.limit} AI SQL queries. Your limit resets in ${formatResetTime(status.resetsInMs)}.`,
                 },
             });
             return;

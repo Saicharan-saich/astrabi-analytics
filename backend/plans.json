@@ -1,0 +1,42 @@
+{
+  "_note": "backend/plans.json is the one place plans, prices and limits are set. Prices are placeholders until you decide them: change 'price' (what the website shows) and set the matching Stripe price IDs on the server (STRIPE_PRICE_SOLO, STRIPE_PRICE_TEAM).",
+  "currency": "GBP",
+  "trialDays": 14,
+  "trialPlan": "solo",
+  "plans": [
+    {
+      "id": "free",
+      "name": "Free",
+      "price": "£0",
+      "period": "",
+      "aiQuestionsPerDay": 5,
+      "seats": 1,
+      "summary": "Try it on your own files or sample data.",
+      "features": ["Upload spreadsheets and clean them", "Charts, dashboards and the data overview", "5 AI questions a day"]
+    },
+    {
+      "id": "solo",
+      "name": "Solo",
+      "price": "£—",
+      "period": "a month",
+      "placeholder": true,
+      "stripePriceEnv": "STRIPE_PRICE_SOLO",
+      "aiQuestionsPerDay": 50,
+      "seats": 1,
+      "summary": "One business, everything included.",
+      "features": ["Everything in Free", "50 AI questions a day", "Alerts and saved dashboards", "Email support"]
+    },
+    {
+      "id": "team",
+      "name": "Team",
+      "price": "£—",
+      "period": "a month",
+      "placeholder": true,
+      "stripePriceEnv": "STRIPE_PRICE_TEAM",
+      "aiQuestionsPerDay": 150,
+      "seats": 5,
+      "summary": "A small team looking at the same numbers.",
+      "features": ["Everything in Solo", "150 AI questions a day, shared", "Up to 5 people", "Priority support"]
+    }
+  ]
+}

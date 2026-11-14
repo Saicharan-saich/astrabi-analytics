@@ -5685,3 +5685,10 @@ html.dark .qi-account-warn { color: #fda29b !important; }
 .qi-account-done { color: #067647; background: color-mix(in srgb, #17b26a 10%, transparent); }
 html.dark .qi-account-error { color: #fda29b; }
 html.dark .qi-account-done { color: #75e0a7; }
+.qi-plan { margin-bottom: 6px; padding: 12px; border-radius: 12px; border: 1px solid var(--border-default); background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
+.qi-plan-head { display: flex; gap: 12px; align-items: flex-start; }
+.qi-plan h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.qi-plan-head p { margin: 2px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.qi-plan-note { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.qi-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.qi-plan-secondary { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--text-primary); border: 1px solid var(--border-strong); background: transparent; }

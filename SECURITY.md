@@ -49,6 +49,19 @@ npm run scan:secrets
 
 CI runs the same check on every push and pull request.
 
+## Accounts and payments
+
+- Sessions last 30 days and are renewed while in use. Changing or resetting a
+  password ends every other session.
+- Password reset links are single-use, expire after 60 minutes, and only a
+  SHA-256 hash of each link is stored. The reset request gives the same answer
+  whether or not an email has an account.
+- Anyone can download everything held about their account, or delete the
+  account and all of it, from "Your account".
+- Card details never reach QuickInsight: payment happens on Stripe Checkout and
+  the Stripe billing portal. Stripe webhooks are accepted only with a valid
+  signature from `STRIPE_WEBHOOK_SECRET`, made within the last five minutes.
+
 ## History rewrite, August 2026
 
 `backend/.env` and `backend/users.json` were previously committed, exposing an

@@ -18,6 +18,10 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
         const body = pathname.endsWith('/auth/login') ? { success: true, token, user }
             : pathname.endsWith('/auth/verify') ? { success: true, valid: true, user }
             : pathname.endsWith('/dashboards') ? (route.request().method() === 'GET' ? { dashboards: [] } : { success: true })
+            : pathname.endsWith('/billing/status') ? {
+                success: true, plan: { id: 'solo', name: 'Solo' }, status: 'trial', trialEndsAt: new Date(Date.now() + 9.5 * 86_400_000).toISOString(), periodEnd: null,
+                hasBillingAccount: false, aiQuestions: { usedToday: 3, limit: 50 }, paymentsEnabled: true, limitsEnforced: true,
+            }
             : {};
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'Access-Control-Allow-Origin': '*' } });
     });

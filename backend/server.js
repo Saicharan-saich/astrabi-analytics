@@ -60,6 +60,12 @@ const accountService = createAccountService({
     jwt, secret: JWT_SECRET, bcrypt, rounds: BCRYPT_ROUNDS, getPool: () => authPool, isProduction: IS_PRODUCTION,
     appUrl: () => process.env.APP_URL || process.env.FRONTEND_URL || 'https://quickinsight.co.uk',
 });
+const { createBillingService, registerBillingRoutes } = require('./billing');
+// Plans, free trials and card payments (Stripe). Limits apply only with BILLING_ENFORCED=true.
+const billingService = createBillingService({
+    getPool: () => authPool,
+    appUrl: () => process.env.APP_URL || process.env.FRONTEND_URL || 'https://quickinsight.co.uk',
+});
 
 // ═══════════════════════════════════════════
 // POSTGRESQL USER PERSISTENCE
@@ -130,6 +136,7 @@ async function initAuthDatabase() {
         try { await authPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_ai_limit INTEGER NOT NULL DEFAULT 50`); } catch {}
         console.log('[Auth] PostgreSQL users table ready');
         await accountService.ensureTables();
+        await billingService.ensureTables();
 
         // Create usage_logs table for tracking AI consumption per user
         await authPool.query(`
@@ -355,6 +362,9 @@ app.use('/api/', limiter);
 // Raise the body limit above the 100 kb default: AI features POST a rendered
 // chart image (Smart Visual Insight) and dataset profile samples, which exceed
 // the default and were rejected with 413 Payload Too Large.
+// The Stripe webhook needs the raw body for its signature, so it is registered first.
+const registerBillingApi = registerBillingRoutes(app, express, billingService, { requireUser: requireAuthenticatedUser });
+
 app.use(express.json({ limit: '15mb' }));
 
 // Correlate frontend, backend, Railway, and OpenRouter incidents without logging
@@ -391,6 +401,8 @@ const apiKeyMiddleware = (req, res, next) => {
     const publicPath = req.path === '/health'
         || req.path === '/ready'
         || req.path.startsWith('/auth/')
+        || req.path === '/billing/webhook'
+        || req.path === '/billing/plans'
         || req.path === '/api/health'
         || req.path === '/api/ready'
         || req.path.startsWith('/api/auth/');
@@ -450,6 +462,8 @@ app.post('/api/auth/register', async (req, res) => {
         );
 
         const token = accountService.issueToken({ id: userId, email: emailNorm, role: userRole, session_version: 1 });
+        // Every new account starts on a free trial of the paid plan (no card).
+        try { await billingService.subscriptionFor(userId); } catch (err) { console.warn('[Billing] Trial not started:', err.message); }
 
         res.json({
             success: true,
@@ -642,6 +656,7 @@ app.post('/api/auth/logout-all-devices', async (req, res) => {
 
 // Password reset, account data download and account deletion.
 registerAccountRoutes(app, accountService, { requireUser: requireAuthenticatedUser, rateLimit });
+registerBillingApi();
 
 // Store active connections
 // Value: { type: 'mssql'|'raw'|'pg', pool: ConnectionPool|PgPool, rawConn: Connection, config: Object }
@@ -1624,7 +1639,7 @@ async function checkAIQuota(userId, options = {}) {
     }
     try {
         // Check if user is active
-        const userResult = await authPool.query('SELECT is_active, daily_ai_limit, role FROM users WHERE id = $1', [userId]);
+        const userResult = await authPool.query('SELECT id, is_active, daily_ai_limit, ai_limit_override, role FROM users WHERE id = $1', [userId]);
         if (userResult.rows.length === 0) return { allowed: false, reason: 'User not found' };
         const user = userResult.rows[0];
         if (!user.is_active) return { allowed: false, reason: 'Account suspended. Contact admin.' };
@@ -1641,11 +1656,17 @@ async function checkAIQuota(userId, options = {}) {
         if (unlimited || user.role === 'admin') {
             return { allowed: true, remaining: null, used, limit: null, unlimited: true };
         }
+        // The plan sets the limit (or, until billing is switched on, the account's own limit).
         const limit = Number.isFinite(limitOverride) && limitOverride > 0
             ? Math.floor(limitOverride)
-            : (user.daily_ai_limit || 50);
+            : ((await billingService.aiLimitFor(user)) ?? (user.daily_ai_limit || 50));
         const quotaLabel = action === 'ai_benchmark_query' ? 'Daily admin benchmark AI limit' : action === 'ai_web_check' ? 'Daily online column check limit' : 'Daily AI limit';
-        if (used >= limit) return { allowed: false, reason: `${quotaLabel} reached (${limit}/day). Contact admin.`, used, limit };
+        if (used >= limit) {
+            const reason = action === 'ai_query' && billingService.enforced()
+                ? `You've used today's ${limit} AI questions on your plan. They reset at midnight, or upgrade in Your account for more.`
+                : `${quotaLabel} reached (${limit}/day). Contact admin.`;
+            return { allowed: false, reason, used, limit };
+        }
         return { allowed: true, remaining: limit - used, used, limit };
     } catch (err) {
         console.error('[Quota] Check failed:', err.message);
@@ -2070,7 +2091,8 @@ app.post('/api/admin/set-quota', async (req, res) => {
         const { targetUserId, dailyLimit } = req.body;
         if (!targetUserId || dailyLimit === undefined) return res.status(400).json({ error: 'targetUserId and dailyLimit required' });
         const limit = Math.max(0, Math.min(parseInt(dailyLimit), 1000));
-        await authPool.query('UPDATE users SET daily_ai_limit = $1 WHERE id = $2', [limit, targetUserId]);
+        // An admin's own choice for this person wins over their plan's limit.
+        await authPool.query('UPDATE users SET daily_ai_limit = $1, ai_limit_override = $1 WHERE id = $2', [limit, targetUserId]);
         console.log(`[Admin] ${user.email} set daily AI limit to ${limit} for user ${targetUserId}`);
         res.json({ success: true, dailyLimit: limit });
     } catch (err) {

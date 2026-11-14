@@ -48,7 +48,8 @@ export function recordAiSqlUsage(user: User): NonNullable<User['aiSqlUsage']> {
 /** Per-role AI SQL query limits */
 export const AI_SQL_LIMITS: Record<string, number> = {
     [UserRole.ADMIN]: Infinity,
-    [UserRole.CONTRIBUTOR]: 10,
+    // The server applies the plan's daily limit; the browser does not keep its own count.
+    [UserRole.CONTRIBUTOR]: Infinity,
     [UserRole.VIEWER]: 0,
 };
 
@@ -60,6 +61,8 @@ export interface AiSqlLimitStatus {
     resetsAt: number;       // Unix timestamp when window resets
     resetsInMs: number;     // Milliseconds until reset
     blocked: boolean;       // True if role has 0 limit (Viewer)
+    /** A guest: the AI is reached through a signed-in account, so they are asked to create one. */
+    needsAccount?: boolean;
 }
 
 /**
@@ -72,6 +75,11 @@ export function checkAiSqlLimit(user: User | null): AiSqlLimitStatus {
             allowed: false, remaining: 0, limit: 0, used: 0,
             resetsAt: 0, resetsInMs: 0, blocked: true,
         };
+    }
+
+    // Guests have no account, and the AI is only reached through one.
+    if (user.id.startsWith('guest_')) {
+        return { allowed: false, remaining: 0, limit: 0, used: 0, resetsAt: 0, resetsInMs: 0, blocked: true, needsAccount: true };
     }
 
     const limit = AI_SQL_LIMITS[user.role] ?? 0;

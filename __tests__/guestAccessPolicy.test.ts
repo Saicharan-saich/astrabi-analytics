@@ -58,15 +58,12 @@ describe('guest contributor access', () => {
     expect(created.id).toBe(`guest_${(1234).toString(36)}`);
   });
 
-  it('allows ten AI SQL questions and blocks the eleventh across guest sessions', () => {
-    const firstSession = guest();
-    for (let request = 0; request < 10; request += 1) {
-      expect(checkAiSqlLimit(firstSession).allowed).toBe(true);
-      recordAiSqlUsage(firstSession);
-    }
-
-    const nextSession = { ...guest(), id: 'guest_next_session' };
-    const status = checkAiSqlLimit(nextSession);
-    expect(status).toMatchObject({ allowed: false, remaining: 0, limit: 10, used: 10, blocked: false });
+  it('asks guests to create a free account before AI questions (the AI is reached through an account)', () => {
+    const status = checkAiSqlLimit(guest());
+    expect(status).toMatchObject({ allowed: false, blocked: true, needsAccount: true });
+    // Signed-in contributors are limited by their plan on the server, not by a count in the browser.
+    const member = { ...guest(), id: 'usr_1' };
+    for (let request = 0; request < 12; request += 1) recordAiSqlUsage(member);
+    expect(checkAiSqlLimit(member).allowed).toBe(true);
   });
 });

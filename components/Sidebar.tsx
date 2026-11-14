@@ -9,6 +9,7 @@ import { PageInfoButton, PageKey } from './PageInfoButton';
 import classNames from 'clsx';
 import { useTheme } from './ThemeProvider';
 import { AccountDialog } from './AccountDialog';
+import { PlanSection } from './PlanSection';
 import { useAppStore } from '../store/useAppStore';
 import { isGuestPrimaryTab, isGuestUser } from '../services/guestAccessPolicy';
 
@@ -33,7 +34,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     const hiddenTabs = useAppStore((s: any) => s.hiddenTabs) || [];
 
     // "Your account": password, download my data, delete my account.
-    const [showAccount, setShowAccount] = useState(false);
+    // Coming back from the payment page opens "Your account" with what happened.
+    const billingReturn = (() => { try { return new URLSearchParams(window.location.search).get('billing') || ''; } catch { return ''; } })();
+    const [showAccount, setShowAccount] = useState(Boolean(billingReturn));
+    const billingNotice = billingReturn === 'success' ? 'Thank you: your plan is active. It can take a few seconds to show here.'
+        : billingReturn === 'cancelled' ? 'No payment was taken.' : '';
     const forgetDeletedAccount = useAuthStore(s => s.forgetDeletedAccount);
 
     // Legacy dataset-preparation routes all live inside Dataset Workspace, so
@@ -350,7 +355,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
             </div>
 
             {showAccount && currentUser && (
-                <AccountDialog email={currentUser.email} onClose={() => setShowAccount(false)} onDeleted={async () => { setShowAccount(false); await forgetDeletedAccount(); }} />
+                <AccountDialog email={currentUser.email}
+                    onClose={() => { setShowAccount(false); if (billingReturn) { try { window.history.replaceState({}, '', window.location.pathname); } catch { /* ignore */ } } }}
+                    onDeleted={async () => { setShowAccount(false); await forgetDeletedAccount(); }}>
+                    {!isGuest && <PlanSection notice={billingNotice} />}
+                </AccountDialog>
             )}
         </div>
     );
