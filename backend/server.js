@@ -54,6 +54,12 @@ if (!process.env.JWT_SECRET) {
 }
 const JWT_SECRET = process.env.JWT_SECRET || 'QuickInsight-development-only-do-not-deploy';
 const BCRYPT_ROUNDS = 12;
+const { createAccountService, registerAccountRoutes } = require('./accounts');
+// Accounts (sessions, password reset, export, deletion). The pool is read at call time.
+const accountService = createAccountService({
+    jwt, secret: JWT_SECRET, bcrypt, rounds: BCRYPT_ROUNDS, getPool: () => authPool, isProduction: IS_PRODUCTION,
+    appUrl: () => process.env.APP_URL || process.env.FRONTEND_URL || 'https://quickinsight.co.uk',
+});
 
 // ═══════════════════════════════════════════
 // POSTGRESQL USER PERSISTENCE
@@ -123,6 +129,7 @@ async function initAuthDatabase() {
         try { await authPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`); } catch {}
         try { await authPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_ai_limit INTEGER NOT NULL DEFAULT 50`); } catch {}
         console.log('[Auth] PostgreSQL users table ready');
+        await accountService.ensureTables();
 
         // Create usage_logs table for tracking AI consumption per user
         await authPool.query(`
@@ -415,8 +422,9 @@ app.post('/api/auth/register', async (req, res) => {
             || !email.trim() || !name.trim() || !password) {
             return res.status(400).json({ success: false, error: 'Email, name, and password are required' });
         }
-        if (password.length < 8) {
-            return res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
+        const weak = accountService.passwordProblem(password);
+        if (weak) {
+            return res.status(400).json({ success: false, error: weak });
         }
 
         const emailNorm = email.trim().toLowerCase();
@@ -441,11 +449,7 @@ app.post('/api/auth/register', async (req, res) => {
             [userId, emailNorm, name, userRole, hashedPassword]
         );
 
-        const token = jwt.sign(
-            { userId, email: emailNorm, role: userRole, sv: 1 },
-            JWT_SECRET,
-            { expiresIn: '24h' }
-        );
+        const token = accountService.issueToken({ id: userId, email: emailNorm, role: userRole, session_version: 1 });
 
         res.json({
             success: true,
@@ -485,11 +489,10 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
         }
 
-        const token = jwt.sign(
-            { userId: user.id, email: user.email, role: user.role, sv: user.session_version || 1 },
-            JWT_SECRET,
-            { expiresIn: '24h' }
-        );
+        if (user.is_active === false) {
+            return res.status(403).json({ success: false, error: 'This account is suspended. Contact support@quickinsight.co.uk.' });
+        }
+        const token = accountService.issueToken(user);
 
         res.json({
             success: true,
@@ -521,8 +524,9 @@ app.post('/api/auth/change-password', async (req, res) => {
         if (!currentPassword || !newPassword) {
             return res.status(400).json({ success: false, error: 'Current and new passwords are required' });
         }
-        if (newPassword.length < 6) {
-            return res.status(400).json({ success: false, error: 'New password must be at least 6 characters' });
+        const weak = accountService.passwordProblem(newPassword);
+        if (weak) {
+            return res.status(400).json({ success: false, error: weak });
         }
 
         if (!authPool) {
@@ -541,10 +545,14 @@ app.post('/api/auth/change-password', async (req, res) => {
         }
 
         const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-        await authPool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, user.id]);
+        // Every other session ends with the old password; this device gets a fresh one.
+        const updated = await authPool.query(
+            'UPDATE users SET password_hash = $1, session_version = session_version + 1 WHERE id = $2 RETURNING id, email, role, session_version',
+            [newHash, user.id]
+        );
 
         console.log(`[Auth] Password changed for: ${user.email}`);
-        res.json({ success: true, message: 'Password changed successfully' });
+        res.json({ success: true, message: 'Password changed successfully', token: accountService.issueToken(updated.rows[0]) });
     } catch (error) {
         console.error('Change password error:', error);
         res.status(500).json({ success: false, error: 'Failed to change password' });
@@ -565,12 +573,17 @@ app.get('/api/auth/verify', async (req, res) => {
         // Check session_version against DB (if DB available)
         if (authPool) {
             try {
-                const { rows } = await authPool.query('SELECT session_version FROM users WHERE id = $1', [decoded.userId]);
+                const { rows } = await authPool.query('SELECT id, email, role, session_version, is_active FROM users WHERE id = $1', [decoded.userId]);
                 if (rows.length > 0) {
                     // Reject legacy tokens (no sv field) — they were issued before session versioning
-                    if (decoded.sv === undefined || rows[0].session_version !== decoded.sv) {
+                    if (decoded.sv === undefined || rows[0].session_version !== decoded.sv || rows[0].is_active === false) {
                         return res.status(401).json({ success: false, error: 'Session invalidated. Please log in again.', code: 'SESSION_REVOKED' });
                     }
+                    // Sliding session: someone using the app is never signed out mid-work.
+                    const renewed = accountService.renewedToken(decoded, rows[0]);
+                    if (renewed) return res.json({ success: true, user: decoded, token: renewed });
+                } else {
+                    return res.status(401).json({ success: false, error: 'This account no longer exists.', code: 'ACCOUNT_GONE' });
                 }
             } catch { /* DB check failed, allow through */ }
         }
@@ -626,6 +639,9 @@ app.post('/api/auth/logout-all-devices', async (req, res) => {
         res.status(500).json({ success: false, error: 'Failed to logout from all devices' });
     }
 });
+
+// Password reset, account data download and account deletion.
+registerAccountRoutes(app, accountService, { requireUser: requireAuthenticatedUser, rateLimit });
 
 // Store active connections
 // Value: { type: 'mssql'|'raw'|'pg', pool: ConnectionPool|PgPool, rawConn: Connection, config: Object }

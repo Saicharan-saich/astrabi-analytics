@@ -331,21 +331,24 @@ function App() {
         const res = await fetch(`${API_BASE}/auth/verify`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
           if (res.status === 401) {
             console.warn('[Session] Token revoked or expired — logging out');
             await logout();
             return;
           }
+        } else if (typeof data.token === 'string' && data.token) {
+          // Sliding session: a day-old token is swapped for a fresh 30-day one.
+          localStorage.setItem('qi_token', data.token);
         }
       } catch {
         // Network error — skip (don't logout on connectivity issues)
       }
     };
-    // Check immediately on mount, then every 30 seconds
+    // Check immediately on mount, then every minute
     void checkSession();
-    const interval = setInterval(() => { void checkSession(); }, 30_000);
+    const interval = setInterval(() => { void checkSession(); }, 60_000);
     return () => clearInterval(interval);
   }, [isAuthenticated, currentUser?.id, logout]);
 

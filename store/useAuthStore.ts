@@ -147,6 +147,8 @@ interface AuthState {
     loginAsGuest: () => void;
     register: (email: string, name: string, password: string) => { success: boolean; error?: string };
     logout: () => Promise<void>;
+    /** After the account is deleted on the server: remove everything it left in this browser and sign out. */
+    forgetDeletedAccount: () => Promise<void>;
     addUser: (email: string, name: string, password: string, role: UserRole) => { success: boolean; error?: string };
     removeUser: (id: string) => { success: boolean; error?: string };
     updateUserRole: (id: string, role: UserRole) => void;
@@ -240,6 +242,27 @@ export const useAuthStore = create<AuthState>()(
                 void import('../services/columnDictionary').then(m => m.clearSessionColumnContext()).catch(() => {});
                 try { sessionStorage.removeItem('qi_session_creds'); } catch {}
                 set({ currentUser: null, isAuthenticated: false });
+            },
+
+            forgetDeletedAccount: async () => {
+                const userId = get().currentUser?.id;
+                if (userId) {
+                    try {
+                        const { loadAllDatasetsFromDB, deleteDatasetFromDB } = await import('../services/datasetDB');
+                        for (const dataset of await loadAllDatasetsFromDB(userId)) await deleteDatasetFromDB(dataset.id);
+                    } catch (err) { console.warn('[Account] Could not clear local datasets:', err); }
+                    try {
+                        for (const key of Object.keys(localStorage)) {
+                            if (key.endsWith(`-${userId}`) || key.includes(`:${userId}:`) || key.includes(`-${userId}-`)) localStorage.removeItem(key);
+                        }
+                    } catch { /* storage unavailable */ }
+                }
+                resetUserData();
+                clearSharedAppData();
+                localStorage.removeItem('qi_token');
+                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); } catch {}
+                try { sessionStorage.clear(); } catch {}
+                set({ currentUser: null, isAuthenticated: false, users: get().users.filter(u => u.id !== userId) });
             },
 
             loginAsGuest: () => {

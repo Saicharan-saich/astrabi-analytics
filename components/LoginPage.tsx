@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useDashboardStore } from '../store/useDashboardStore';
 import { UserRole } from '../types';
 import { PreLoginTour } from './PreLoginTour';
-import { Eye, EyeOff, LogIn, AlertCircle, UserPlus, Users, Shield, BarChart2, Brain, Zap } from 'lucide-react';
+import { Eye, EyeOff, LogIn, AlertCircle, UserPlus, Users, Shield, BarChart2, Brain, Zap, Mail, KeyRound, Check } from 'lucide-react';
 
 interface LoginPageProps {
     onShowLegal?: () => void;
@@ -16,10 +16,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [mode, setMode] = useState<'login' | 'register'>('login');
-    const [showTour, setShowTour] = useState(true);
+    // A reset link from the email opens straight on "choose a new password".
+    const resetToken = (() => { try { return new URLSearchParams(window.location.search).get('reset') || ''; } catch { return ''; } })();
+    const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset'>(resetToken ? 'reset' : 'login');
+    const [notice, setNotice] = useState('');
+    const [showTour, setShowTour] = useState(!resetToken);
     const loginAsGuest = useAuthStore(s => s.loginAsGuest);
 
     // Typing effect for tagline
@@ -48,11 +52,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
         setError('');
         setIsLoading(true);
 
+        setNotice('');
         try {
-            const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+            if (mode === 'forgot') {
+                const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim() }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) setError(data.error || 'Could not start the reset. Please try again.');
+                else setNotice(data.message || 'If that email has an account, a reset link is on its way.');
+                setIsLoading(false);
+                return;
+            }
+            if (mode === 'reset' && password !== confirmPassword) {
+                setError('The two passwords do not match');
+                setIsLoading(false);
+                return;
+            }
+            const endpoint = mode === 'login' ? '/api/auth/login' : mode === 'reset' ? '/api/auth/reset-password' : '/api/auth/register';
             const body = mode === 'login'
                 ? { email: email.trim(), password }
-                : { email: email.trim(), name: name.trim(), password, role: 'contributor' };
+                : mode === 'reset'
+                    ? { token: resetToken, password }
+                    : { email: email.trim(), name: name.trim(), password, role: 'contributor' };
 
             const res = await fetch(`${API_BASE}${endpoint}`, {
                 method: 'POST',
@@ -63,10 +85,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
             const data = await res.json();
 
             if (!res.ok || !data.success) {
-                setError(data.error || (mode === 'login' ? 'Login failed' : 'Registration failed'));
+                setError(data.error || (mode === 'login' ? 'Login failed' : mode === 'reset' ? 'Could not reset the password' : 'Registration failed'));
                 setIsLoading(false);
                 return;
             }
+            // The reset link is used up: take it out of the address bar.
+            if (mode === 'reset') { try { window.history.replaceState({}, '', window.location.pathname); } catch { /* ignore */ } }
 
             // Restore this account's local chart cache before cloud definitions
             // are merged. Never upload the previous account's shared workspace.
@@ -115,7 +139,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
             }
         } catch (err: any) {
             console.error('[LoginPage] Auth request failed:', err);
-            setError('Could not connect to the server. Make sure the backend is running on port 5002.');
+            setError('Could not reach QuickInsight. Check your internet connection and try again.');
         }
 
         setIsLoading(false);
@@ -150,10 +174,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                 <div className="qi-auth-card overflow-hidden">
                     <div className="px-7 pt-7 pb-5">
                         <h2 className="qi-auth-title text-base font-semibold mb-0.5">
-                            {mode === 'login' ? 'Welcome back' : 'Create your account'}
+                            {mode === 'login' ? 'Welcome back' : mode === 'forgot' ? 'Reset your password' : mode === 'reset' ? 'Choose a new password' : 'Create your account'}
                         </h2>
                         <p className="qi-auth-muted text-[13px] mb-5">
-                            {mode === 'login' ? 'Sign in to your workspace' : 'Get started with QuickInsight'}
+                            {mode === 'login' ? 'Sign in to your workspace'
+                                : mode === 'forgot' ? 'Enter your email and we\u2019ll send you a link to choose a new one.'
+                                    : mode === 'reset' ? 'At least 8 characters. You\u2019ll be signed in straight away.'
+                                        : 'Get started with QuickInsight'}
                         </p>
 
                         <form onSubmit={handleSubmit} className="space-y-3">
@@ -177,7 +204,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                                 </div>
                             )}
 
-                            <div>
+                            {mode !== 'reset' && <div>
                                 <label htmlFor="quickinsight-email" className="qi-auth-label block text-[13px] font-medium mb-1.5">
                                     Email Address
                                 </label>
@@ -190,20 +217,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                                     onChange={e => setEmail(e.target.value)}
                                     placeholder="you@company.com"
                                     required
-                                    autoFocus={mode === 'login'}
+                                    autoFocus={mode === 'login' || mode === 'forgot'}
                                     className="qi-auth-input w-full px-3.5 py-2.5 text-sm"
                                 />
-                            </div>
+                            </div>}
 
-                            <div>
-                                <label htmlFor="quickinsight-password" className="qi-auth-label block text-[13px] font-medium mb-1.5">
-                                    Password
-                                </label>
+                            {mode !== 'forgot' && <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label htmlFor="quickinsight-password" className="qi-auth-label block text-[13px] font-medium">
+                                        {mode === 'reset' ? 'New password' : 'Password'}
+                                    </label>
+                                    {mode === 'login' && (
+                                        <button type="button" onClick={() => { setMode('forgot'); setError(''); setNotice(''); }} className="qi-auth-link text-[12px] font-medium">
+                                            Forgot password?
+                                        </button>
+                                    )}
+                                </div>
                                 <div className="relative">
                                     <input
                                         id="quickinsight-password"
                                         name="password"
                                         autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                                        autoFocus={mode === 'reset'}
+                                        minLength={mode === 'login' ? undefined : 8}
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={e => setPassword(e.target.value)}
@@ -221,7 +257,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                     </button>
                                 </div>
-                            </div>
+                            </div>}
+
+                            {mode === 'reset' && (
+                                <div>
+                                    <label htmlFor="quickinsight-password-confirm" className="qi-auth-label block text-[13px] font-medium mb-1.5">Type it again</label>
+                                    <input id="quickinsight-password-confirm" name="password-confirm" autoComplete="new-password" type={showPassword ? 'text' : 'password'}
+                                        value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="••••••••" required minLength={8}
+                                        className="qi-auth-input w-full px-3.5 py-2.5 text-sm" />
+                                </div>
+                            )}
+
+                            {notice && (
+                                <div role="status" className="qi-auth-notice flex items-start gap-2 p-3 rounded-lg text-xs">
+                                    <Check className="w-3.5 h-3.5 shrink-0 mt-px" />
+                                    {notice}
+                                </div>
+                            )}
 
                             {error && (
                                 <div role="alert" aria-live="assertive" className="qi-auth-error flex items-center gap-2 p-3 rounded-lg text-xs">
@@ -239,8 +291,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                 ) : (
                                     <>
-                                        {mode === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
-                                        {mode === 'login' ? 'Sign In' : 'Create Account'}
+                                        {mode === 'login' ? <LogIn className="w-4 h-4" /> : mode === 'forgot' ? <Mail className="w-4 h-4" /> : mode === 'reset' ? <KeyRound className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                                        {mode === 'login' ? 'Sign In' : mode === 'forgot' ? 'Send reset link' : mode === 'reset' ? 'Save and sign in' : 'Create Account'}
                                     </>
                                 )}
                             </button>
@@ -249,10 +301,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                         {/* Toggle login/register */}
                         <div className="mt-3 text-center">
                             <button
-                                onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
+                                onClick={() => {
+                                    if (mode === 'reset') { try { window.history.replaceState({}, '', window.location.pathname); } catch { /* ignore */ } }
+                                    setMode(mode === 'login' ? 'register' : 'login'); setError(''); setNotice('');
+                                }}
                                 className="qi-auth-link text-[13px] font-medium transition-colors"
                             >
-                                {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign In'}
+                                {mode === 'login' ? "Don't have an account? Register" : mode === 'register' ? 'Already have an account? Sign In' : 'Back to sign in'}
                             </button>
                         </div>
                     </div>
@@ -276,7 +331,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             Continue as Guest
                         </button>
                         <p className="qi-auth-muted text-xs text-center mt-2 leading-relaxed">
-                            Upload data, build visuals and ask up to 10 AI SQL questions per day — no account needed
+                            Try it with your own file or sample data, no account needed. Asking the AI needs a free account.
                         </p>
                     </div>
                 </div>
