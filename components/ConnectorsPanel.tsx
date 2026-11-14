@@ -49,7 +49,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady, o
     const [joinEdges, setJoinEdges] = useState<JoinEdge[]>([]);
     const [loadingColumns, setLoadingColumns] = useState<string | null>(null);
     const [connectionMode, setConnectionMode] = useState<ConnectionMode>('import');
-    const [connConfig, setConnConfig] = useState<{ host: string; port: string; database: string; username: string; ssl: boolean; password?: string } | null>(null);
+    const [connConfig, setConnConfig] = useState<{ host: string; port: string; database: string; username: string; ssl: boolean; reconnectToken?: string } | null>(null);
 
     const handleConnect = () => {
         if (!connectsDirectly(selectedConnectorId)) { setGuideId(selectedConnectorId); return; }
@@ -98,8 +98,9 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady, o
         }
 
         setConnectionId(result.connectionId!);
-        // Store config (including password for session caching) for reconnection
-        setConnConfig({ host: config.host, port: config.port, database: config.database, username: config.username, ssl: config.ssl, password: config.password });
+        // Keep the connection details for reconnecting. The password stays on the
+        // server; the browser holds only the reconnect ticket it was given.
+        setConnConfig({ host: config.host, port: config.port, database: config.database, username: config.username, ssl: config.ssl, reconnectToken: result.reconnectToken });
 
         // Fetch tables + FK relationships in parallel
         const [tables, fks] = await Promise.all([
@@ -177,8 +178,8 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady, o
         // Always build connection info so user can switch modes later
         const liveInfo: LiveConnectionInfo & {
             connectionMode: 'import' | 'live';
-            /** Memory-only credential used for this browser session; never persisted. */
-            _sessionPassword?: string;
+            /** Ticket for reconnecting this session; the password itself stays on the server. */
+            _reconnectToken?: string;
         } = {
             connectionId,
             dbType,
@@ -191,7 +192,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady, o
             database: connConfig?.database,
             username: connConfig?.username,
             ssl: connConfig?.ssl,
-            _sessionPassword: connConfig?.password, // Ephemeral — for session caching only, never persisted
+            _reconnectToken: connConfig?.reconnectToken,
         };
 
         if (selectedTables.length === 1) {

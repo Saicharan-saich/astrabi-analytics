@@ -69,7 +69,11 @@ function createBillingService({ getPool, appUrl, env = process.env, fetchImpl = 
     const config = loadPlans();
     const stripeEnabled = () => Boolean(env.STRIPE_SECRET_KEY);
     const enforced = () => /^(1|true|yes|on)$/i.test(String(env.BILLING_ENFORCED || ''));
-    const priceFor = (planId) => { const plan = config.plans.find(p => p.id === planId); return plan?.stripePriceEnv ? env[plan.stripePriceEnv] : undefined; };
+    const priceFor = (planId) => {
+        const plan = config.plans.find(p => p.id === planId);
+        if (!plan || plan.available === false) return undefined;
+        return plan.stripePriceEnv ? env[plan.stripePriceEnv] : undefined;
+    };
     const planForPrice = (priceId) => config.plans.find(p => p.stripePriceEnv && env[p.stripePriceEnv] === priceId)?.id;
 
     async function stripe(method, endpoint, body) {

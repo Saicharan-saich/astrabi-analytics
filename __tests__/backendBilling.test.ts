@@ -85,6 +85,8 @@ describe('Stripe', () => {
         expect(body).toContain('customer_email=owner@shop.co.uk');
         expect(body).toContain('success_url=https://quickinsight.co.uk/?billing=success');
         expect(await billing.checkout({ userId: 'u1' }, 'free')).toMatchObject({ ok: false });
+        // A plan marked "available": false (Team, until invites exist) can't be bought.
+        expect(await billing.checkout({ userId: 'u1' }, 'team')).toMatchObject({ ok: false, status: 400 });
         const noStripe = createBillingService({ getPool: () => db.pool, appUrl: () => 'x', env: {} });
         expect(await noStripe.checkout({ userId: 'u1' }, 'solo')).toMatchObject({ ok: false, status: 503 });
     });

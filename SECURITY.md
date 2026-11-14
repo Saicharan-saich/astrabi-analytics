@@ -62,6 +62,26 @@ CI runs the same check on every push and pull request.
   the Stripe billing portal. Stripe webhooks are accepted only with a valid
   signature from `STRIPE_WEBHOOK_SECRET`, made within the last five minutes.
 
+## Website and database connections
+
+- The website sends a Content-Security-Policy and other security headers
+  (`vercel.json`). Code may load only from QuickInsight and jsDelivr (the
+  in-browser query engine and map outlines); fonts from Google Fonts. The
+  browser tests run against the same headers and fail on anything the policy
+  blocks.
+- SQL Server and PostgreSQL passwords are never stored in the browser. To
+  reconnect a dropped live connection, the backend keeps the password encrypted
+  (AES-256-GCM, key held only in memory) for up to 8 hours and gives the
+  browser a ticket that works only for that account. Signing out, changing or
+  resetting the password, deleting the account or restarting the server ends
+  every ticket.
+- Spreadsheets are read with SheetJS 0.20.3 (from cdn.sheetjs.com; the npm
+  release stopped at 0.18.5, which has known prototype-pollution and ReDoS
+  issues).
+- AI usage logs are deleted after 30 days and the account activity log after
+  a year (`LOG_RETENTION_DAYS`, `ACTIVITY_RETENTION_DAYS`).
+- Smart Insight asks before it sends a picture of a chart to the AI.
+
 ## History rewrite, August 2026
 
 `backend/.env` and `backend/users.json` were previously committed, exposing an

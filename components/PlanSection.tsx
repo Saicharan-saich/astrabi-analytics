@@ -54,7 +54,7 @@ export function PlanSection({ notice }: { notice?: string }) {
         } catch { setError('Could not reach QuickInsight. Check your connection.'); setBusy(null); }
     };
 
-    const paid = plansFile.plans.filter(plan => plan.id !== 'free');
+    const paid = plansFile.plans.filter(plan => plan.id !== 'free' && (plan as { available?: boolean }).available !== false);
     const onTrial = status?.status === 'trial';
     const paying = status && ['active', 'past_due', 'trialing'].includes(status.status);
     const limit = status?.aiQuestions.limit;

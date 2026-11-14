@@ -5692,3 +5692,27 @@ html.dark .qi-account-done { color: #75e0a7; }
 .qi-plan-note { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
 .qi-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .qi-plan-secondary { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--text-primary); border: 1px solid var(--border-strong); background: transparent; }
+
+/* Smart Insight: ask before a picture of the chart goes to the AI */
+.qi-chart-consent { display: grid; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface-raised, transparent); color: var(--text-primary); }
+.qi-chart-consent h4 { margin: 0; font-size: 15px; font-weight: 700; }
+.qi-chart-consent p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+.qi-chart-consent-always { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.qi-chart-consent-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ── Plans and prices (before sign-in) ── */
+.qi-account.qi-pricing { max-width: 880px; }
+.qi-pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.qi-pricing-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px; border: 1px solid var(--border-default); background: var(--bg-surface); }
+.qi-pricing-card.is-featured { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary) inset; }
+.qi-pricing-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qi-pricing-name h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.qi-pricing-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; color: var(--text-secondary); border: 1px solid var(--border-strong); }
+.qi-pricing-price { margin: 0; font-size: 24px; font-weight: 700; color: var(--text-primary); }
+.qi-pricing-price span { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.qi-pricing-price .qi-pricing-tbc { font-size: 15px; font-weight: 600; color: var(--text-secondary); }
+.qi-pricing-summary { margin: 0; font-size: 13px; color: var(--text-secondary); }
+.qi-pricing-card ul, .qi-pricing-facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.qi-pricing-card li, .qi-pricing-facts li { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: var(--text-primary); }
+.qi-pricing-card li svg, .qi-pricing-facts li svg { flex: none; margin-top: 3px; color: var(--color-primary); }
+.qi-pricing-facts { margin: 16px 0 4px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--color-primary) 5%, transparent); }

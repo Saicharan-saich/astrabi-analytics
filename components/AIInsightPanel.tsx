@@ -18,11 +18,17 @@ interface AIInsightPanelProps {
     };
 }
 
+/** Remembered "always allow" for sending chart pictures, per browser. */
+export const CHART_PICTURE_CONSENT_KEY = 'QuickInsight-chart-picture-consent-v1';
+const hasChartPictureConsent = () => { try { return localStorage.getItem(CHART_PICTURE_CONSENT_KEY) === 'yes'; } catch { return false; } };
+const rememberChartPictureConsent = () => { try { localStorage.setItem(CHART_PICTURE_CONSENT_KEY, 'yes'); } catch { /* storage unavailable */ } };
+
 /**
- * AI Insight Panel — displays AI interpretation of the VISIBLE chart only.
- * 
- * SECURITY: This component captures the chart canvas as an image and sends
- * ONLY that image to the AI. It has ZERO access to raw data, SQL, or datasets.
+ * AI Insight Panel — the AI describes the chart on screen.
+ *
+ * It sends a picture of the visible chart (with the numbers and labels the chart
+ * shows) and the chart's title and axis names. Rows, SQL and the file itself are
+ * never sent. Nothing is sent until the person agrees, once or always.
  */
 export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
     isOpen,
@@ -35,9 +41,12 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
     const [insight, setInsight] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [consented, setConsented] = useState<boolean>(hasChartPictureConsent);
+    const [alwaysAllow, setAlwaysAllow] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
 
-    const fetchInsight = async () => {
+    const fetchInsight = async (agreedNow = false) => {
+        if (!agreedNow && !consented && !hasChartPictureConsent()) return;
         if (!chartContainerRef.current) {
             setError('No chart available to interpret.');
             return;
@@ -69,9 +78,15 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
         }
     };
 
-    // Auto-fetch when panel opens
+    const agree = () => {
+        if (alwaysAllow) rememberChartPictureConsent();
+        setConsented(true);
+        void fetchInsight(true);
+    };
+
+    // Auto-fetch when panel opens (only after agreeing)
     useEffect(() => {
-        if (isOpen && !insight && !loading) {
+        if (isOpen && consented && !insight && !loading) {
             // Check if we have a stale insight from a previous visual
             fetchInsight();
         }
@@ -84,7 +99,7 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
             setInsight('');
             setError(null);
             // Optional: Auto-refetch if the panel is already open
-            if (visualHash) fetchInsight();
+            if (visualHash && consented) fetchInsight();
         }
     }, [chartTitle, visualHash]);
 
@@ -119,7 +134,7 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
                         />
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Smart Visual Insight</h3>
-                            <p className="text-[11px] text-slate-500">Interprets the chart visual only — no data access</p>
+                            <p className="text-[11px] text-slate-500">Describes the chart on screen — your rows are not sent</p>
                         </div>
                     </div>
                     <button
@@ -134,12 +149,30 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
                 <div className="px-5 py-2 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                     <span className="text-[11px] font-medium text-blue-700">
-                        🔒 Secure — interprets the rendered chart image only
+                        Sends a picture of this chart only — not your rows, SQL or file
                     </span>
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-5">
+                    {!consented && (
+                        <div className="qi-chart-consent" role="group" aria-labelledby="qi-chart-consent-title">
+                            <h4 id="qi-chart-consent-title">Send a picture of this chart to the AI?</h4>
+                            <p>
+                                The AI looks at the chart as you see it, so the picture includes the numbers and labels
+                                shown on it{chartTitle ? <>, and the title “{chartTitle}”</> : null}. Your rows, SQL and the file itself are not sent,
+                                and the picture is not stored by QuickInsight.
+                            </p>
+                            <label className="qi-chart-consent-always">
+                                <input type="checkbox" checked={alwaysAllow} onChange={e => setAlwaysAllow(e.target.checked)} />
+                                Don't ask again on this device
+                            </label>
+                            <div className="qi-chart-consent-actions">
+                                <button type="button" className="qi-account-primary" onClick={agree}>Send the picture</button>
+                                <button type="button" className="qi-plan-secondary" onClick={onClose}>Not now</button>
+                            </div>
+                        </div>
+                    )}
                     {loading && (
                         <div className="space-y-4">
                             <div className="flex items-center gap-3 text-sm text-slate-600">
@@ -210,11 +243,11 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
                 {/* Footer */}
                 <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50">
                     <span className="text-[11px] text-slate-400">
-                        Smart Insight • Visual interpretation only
+                        Smart Insight • Picture of the chart only
                     </span>
                     <button
-                        onClick={fetchInsight}
-                        disabled={loading}
+                        onClick={() => void fetchInsight()}
+                        disabled={loading || !consented}
                         className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-all"
                     >
                         <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />

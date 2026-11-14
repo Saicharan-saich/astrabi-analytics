@@ -566,6 +566,7 @@ app.post('/api/auth/change-password', async (req, res) => {
         );
 
         console.log(`[Auth] Password changed for: ${user.email}`);
+        connectionVault.forget(updated.rows[0].id);
         res.json({ success: true, message: 'Password changed successfully', token: accountService.issueToken(updated.rows[0]) });
     } catch (error) {
         console.error('Change password error:', error);
@@ -655,12 +656,19 @@ app.post('/api/auth/logout-all-devices', async (req, res) => {
 });
 
 // Password reset, account data download and account deletion.
-registerAccountRoutes(app, accountService, { requireUser: requireAuthenticatedUser, rateLimit });
+registerAccountRoutes(app, accountService, {
+    requireUser: requireAuthenticatedUser,
+    rateLimit,
+    // A new password or a deleted account ends saved database reconnects too.
+    onSignedOutEverywhere: (userId) => connectionVault.forget(userId),
+});
 registerBillingApi();
 
 // Store active connections
 // Value: { type: 'mssql'|'raw'|'pg', pool: ConnectionPool|PgPool, rawConn: Connection, config: Object }
 const connections = new Map();
+const { createConnectionVault } = require("./connectionVault");
+const connectionVault = createConnectionVault();
 
 async function resolveCurrentUser(req) {
     const tokenUser = extractUser(req);
@@ -789,7 +797,7 @@ function queryConnection(connection, query) {
 }
 
 // Test connection endpoint
-app.post('/api/connect', requireAuthenticatedUser, async (req, res) => {
+async function connectMssql(req, res) {
     try {
         const { host, port, database, username, password, useWindowsAuth } = req.body;
 
@@ -858,6 +866,7 @@ app.post('/api/connect', requireAuthenticatedUser, async (req, res) => {
         res.json({
             success: true,
             connectionId,
+            reconnectToken: connectionVault.store(req.authUser.userId, 'mssql', connectionEntry.config, password),
             message: 'Connected successfully'
         });
 
@@ -882,7 +891,8 @@ app.post('/api/connect', requireAuthenticatedUser, async (req, res) => {
             error: msg
         });
     }
-});
+}
+app.post('/api/connect', requireAuthenticatedUser, connectMssql);
 
 // Get database schema (list of tables)
 app.post('/api/schema', requireAuthenticatedUser, async (req, res) => {
@@ -1049,7 +1059,7 @@ app.post('/api/foreign-keys', requireAuthenticatedUser, async (req, res) => {
 // ═══════════════════════════════════════════
 
 // PostgreSQL Connect
-app.post('/api/pg/connect', requireAuthenticatedUser, async (req, res) => {
+async function connectPg(req, res) {
     try {
         const { host, port, database, username, password, ssl } = req.body;
         const allowPrivateHosts = !IS_PRODUCTION || process.env.ALLOW_PRIVATE_DB_HOSTS === 'true';
@@ -1084,6 +1094,7 @@ app.post('/api/pg/connect', requireAuthenticatedUser, async (req, res) => {
         res.json({
             success: true,
             connectionId,
+            reconnectToken: connectionVault.store(req.authUser.userId, 'pg', safeConnectionConfig(req.body, 5432), password),
             message: 'Connected to PostgreSQL successfully'
         });
     } catch (error) {
@@ -1093,6 +1104,26 @@ app.post('/api/pg/connect', requireAuthenticatedUser, async (req, res) => {
             error: error.message || 'Failed to connect to PostgreSQL'
         });
     }
+}
+app.post('/api/pg/connect', requireAuthenticatedUser, connectPg);
+
+// Re-open a dropped live connection with the password kept on the server
+// (see connectionVault.js). The browser holds only the ticket.
+app.post('/api/reconnect', requireAuthenticatedUser, async (req, res) => {
+    const ticket = typeof req.body?.reconnectToken === 'string' ? req.body.reconnectToken : '';
+    const saved = connectionVault.open(req.authUser.userId, ticket);
+    if (!saved) {
+        return res.status(401).json({ success: false, needsPassword: true, error: 'Please enter the database password again to reconnect.' });
+    }
+    connectionVault.forget(req.authUser.userId, ticket);
+    req.body = { ...saved.config, password: saved.password };
+    return saved.kind === 'pg' ? connectPg(req, res) : connectMssql(req, res);
+});
+
+app.post('/api/reconnect/forget', requireAuthenticatedUser, (req, res) => {
+    const ticket = typeof req.body?.reconnectToken === 'string' ? req.body.reconnectToken : undefined;
+    connectionVault.forget(req.authUser.userId, ticket);
+    res.json({ success: true });
 });
 
 // PostgreSQL Schema (list tables)
@@ -2310,6 +2341,15 @@ const connectionReaper = setInterval(() => {
     }
 }, 5 * 60 * 1000);
 connectionReaper.unref?.();
+
+// Keep logs only as long as the privacy policy says (see accounts.js purgeOldRecords).
+const runRetention = () => accountService.purgeOldRecords()
+    .then(removed => { if (removed) console.log('[Retention] Removed old records:', JSON.stringify(removed)); })
+    .catch(error => console.error('[Retention] Clean-up failed:', error.message));
+const retentionStart = setTimeout(runRetention, 60 * 1000);
+retentionStart.unref?.();
+const retentionTimer = setInterval(runRetention, 6 * 60 * 60 * 1000);
+retentionTimer.unref?.();
 
 // Liveness: the process can accept HTTP. No dependency details are exposed.
 app.get('/api/health', (req, res) => {

@@ -9,7 +9,20 @@ fs.mkdirSync(OUT, { recursive: true });
 const user = { id: 'visual-user', email: 'visual@example.com', name: 'Alex Morgan', role: 'admin' };
 const token = 'header.' + Buffer.from(JSON.stringify({ userId: user.id })).toString('base64url') + '.signature';
 
+/** Record anything the site's Content-Security-Policy (vercel.json, also served
+ * by the preview) blocks, so a screen that needs a new source fails here. */
+export async function watchSecurityPolicy(page: Page) {
+    await page.addInitScript(() => {
+        const seen: string[] = [];
+        (window as any).__cspViolations = seen;
+        document.addEventListener('securitypolicyviolation', event => {
+            seen.push(`${event.effectiveDirective} blocked ${event.blockedURI || 'inline'}${event.sourceFile ? ` (${event.sourceFile}:${event.lineNumber})` : ''}`);
+        });
+    });
+}
+
 export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string, options: { oldCleaning?: boolean; noData?: boolean } = {}) {
+    await watchSecurityPolicy(page);
     const dashboard = dashboardFixture();
     const second = secondDashboardFixture();
     const gallery = galleryDashboardFixture();
@@ -96,5 +109,7 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
 export async function shoot(page: Page, name: string) {
     await page.waitForTimeout(1800); // let chart entrance animations finish
     await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+    const blocked = await page.evaluate(() => (window as any).__cspViolations as string[] | undefined).catch(() => undefined);
+    if (blocked?.length) throw new Error(`The security policy blocked something on "${name}":\n${[...new Set(blocked)].join('\n')}`);
 }
 

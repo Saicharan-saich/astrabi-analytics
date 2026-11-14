@@ -1821,7 +1821,7 @@ export const connectToDatabase = async (config: {
     useWindowsAuth: boolean;
     dbType?: 'mssql' | 'postgres';
     ssl?: boolean;
-}): Promise<{ success: boolean; connectionId?: string; error?: string }> => {
+}): Promise<{ success: boolean; connectionId?: string; reconnectToken?: string; error?: string }> => {
     try {
         const endpoint = config.dbType === 'postgres' ? `${API_BASE_URL}/pg/connect` : `${API_BASE_URL}/connect`;
         const response = await fetch(endpoint, {

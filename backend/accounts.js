@@ -153,11 +153,31 @@ function createAccountService({ jwt, secret, bcrypt, rounds, getPool, isProducti
         return { ok: true };
     }
 
-    return { issueToken, renewedToken, passwordProblem, ensureTables, requestReset, completeReset, exportAccount, deleteAccount, SESSION_DAYS, MIN_PASSWORD };
+    /**
+     * What the privacy policy promises about keeping logs: AI usage logs for
+     * LOG_RETENTION_DAYS (30), the account activity log for
+     * ACTIVITY_RETENTION_DAYS (365), and used or expired reset links for a day.
+     */
+    const LOG_RETENTION_DAYS = Math.max(1, Number(process.env.LOG_RETENTION_DAYS) || 30);
+    const ACTIVITY_RETENTION_DAYS = Math.max(1, Number(process.env.ACTIVITY_RETENTION_DAYS) || 365);
+    async function purgeOldRecords() {
+        const pool = getPool();
+        if (!pool) return null;
+        const removed = {};
+        const run = async (name, sql, params) => {
+            try { removed[name] = (await pool.query(sql, params)).rowCount || 0; } catch (error) { removed[name] = `failed: ${error.message}`; }
+        };
+        await run('usage_logs', `DELETE FROM usage_logs WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')`, [LOG_RETENTION_DAYS]);
+        await run('user_activities', `DELETE FROM user_activities WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')`, [ACTIVITY_RETENTION_DAYS]);
+        await run('password_resets', `DELETE FROM password_resets WHERE expires_at < NOW() - INTERVAL '1 day' OR used_at < NOW() - INTERVAL '1 day'`, []);
+        return removed;
+    }
+
+    return { issueToken, renewedToken, passwordProblem, ensureTables, requestReset, completeReset, exportAccount, deleteAccount, purgeOldRecords, SESSION_DAYS, MIN_PASSWORD, LOG_RETENTION_DAYS, ACTIVITY_RETENTION_DAYS };
 }
 
 /** The account routes. `requireUser` is the server's authenticated-user middleware. */
-function registerAccountRoutes(app, service, { requireUser, rateLimit }) {
+function registerAccountRoutes(app, service, { requireUser, rateLimit, onSignedOutEverywhere = () => {} }) {
     const resetLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { success: false, error: 'Too many reset requests. Try again in a few minutes.' } });
     const send = (res, result, ok = (r) => r) => result.ok ? res.json({ success: true, ...ok(result) }) : res.status(result.status || 400).json({ success: false, error: result.error });
 
@@ -174,6 +194,7 @@ function registerAccountRoutes(app, service, { requireUser, rateLimit }) {
     app.post('/api/auth/reset-password', resetLimit, async (req, res) => {
         try {
             const result = await service.completeReset(req.body?.token, req.body?.password);
+            if (result.ok) onSignedOutEverywhere(result.user.id);
             send(res, result, r => ({ token: r.token, user: r.user }));
         } catch (error) {
             console.error('[Accounts] Reset failed:', error.message);
@@ -196,6 +217,7 @@ function registerAccountRoutes(app, service, { requireUser, rateLimit }) {
         try {
             if (req.body?.confirm !== 'DELETE') return res.status(400).json({ success: false, error: 'Type DELETE to confirm' });
             const result = await service.deleteAccount(req.authUser.userId, req.body?.password);
+            if (result.ok) onSignedOutEverywhere(req.authUser.userId);
             send(res, result, () => ({ message: 'Your account and everything stored with it has been deleted.' }));
         } catch (error) {
             console.error('[Accounts] Delete failed:', error.message);

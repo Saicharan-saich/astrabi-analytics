@@ -233,6 +233,16 @@ export const useAuthStore = create<AuthState>()(
                         console.error('[Logout] ❌ Dashboard flush failed:', err);
                     }
                 }
+                // The server forgets every database password it kept for reconnecting.
+                const sessionToken = localStorage.getItem('qi_token');
+                if (sessionToken) {
+                    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
+                    void fetch(`${apiBase}/reconnect/forget`, {
+                        method: 'POST', keepalive: true,
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+                        body: '{}',
+                    }).catch(() => {});
+                }
                 // Always clear state immediately
                 resetUserData();
                 clearSharedAppData();
@@ -240,7 +250,7 @@ export const useAuthStore = create<AuthState>()(
                 // What the AI found online about column names lasts for the session only.
                 try { localStorage.removeItem('QuickInsight-column-context-session-v1'); } catch {}
                 void import('../services/columnDictionary').then(m => m.clearSessionColumnContext()).catch(() => {});
-                try { sessionStorage.removeItem('qi_session_creds'); } catch {}
+                try { Object.keys(sessionStorage).filter(k => k.startsWith('db_ticket_') || k.startsWith('db_creds_') || k === 'qi_session_creds').forEach(k => sessionStorage.removeItem(k)); } catch {}
                 set({ currentUser: null, isAuthenticated: false });
             },
 

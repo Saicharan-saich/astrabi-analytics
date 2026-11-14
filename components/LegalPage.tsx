@@ -22,10 +22,25 @@ interface ContactForm {
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const LAST_UPDATED = 'June 2025';
+const LAST_UPDATED = 'November 2026';
 const CURRENT_YEAR = new Date().getFullYear();
 const CONTACT_EMAIL = 'support@quickinsight.co.uk';
 const WEBSITE = 'quickinsight.co.uk';
+/*
+ * Company details come from the site's settings (see .env.example), so they are
+ * filled in once in one place. A detail that isn't set is left out rather than
+ * shown as a placeholder.
+ */
+const env = (import.meta as any).env || {};
+const LEGAL_NAME: string = env.VITE_LEGAL_ENTITY_NAME || 'QuickInsight';
+const COMPANY_NUMBER: string = env.VITE_COMPANY_NUMBER || '';
+const REGISTERED_ADDRESS: string = env.VITE_REGISTERED_ADDRESS || '';
+const ICO_NUMBER: string = env.VITE_ICO_REGISTRATION || '';
+const companyLine = [
+    LEGAL_NAME,
+    COMPANY_NUMBER && `company number ${COMPANY_NUMBER}`,
+    REGISTERED_ADDRESS && `registered office ${REGISTERED_ADDRESS}`,
+].filter(Boolean).join(', ');
 
 const TABS: { key: LegalTab; label: string; icon: React.ReactNode }[] = [
     { key: 'privacy',  label: 'Privacy Policy',     icon: <Shield className="w-4 h-4" /> },
@@ -69,14 +84,14 @@ const PrivacyPolicy: React.FC = () => (
     <div>
         <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-6">
             <p className="text-sm text-indigo-700 font-medium">
-                🔒 Your privacy is fundamental to Astrabi Analytics. This policy explains how we collect, use, and protect your personal data in compliance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018.
+                🔒 Your privacy is fundamental to QuickInsight. This policy explains how we collect, use, and protect your personal data in compliance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018.
             </p>
         </div>
         <Paragraph>Last updated: {LAST_UPDATED}</Paragraph>
 
         <SectionTitle emoji="📋" title="1. Data Controller" />
         <Paragraph>
-            Astrabi Analytics (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;) operates the QuickInsight platform at {WEBSITE}. We are the data controller responsible for your personal data. For any data protection enquiries, please contact us at <a href={`mailto:${CONTACT_EMAIL}`} className="text-indigo-600 hover:underline font-medium">{CONTACT_EMAIL}</a>.
+            {companyLine} (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;) operates the QuickInsight platform at {WEBSITE}.{ICO_NUMBER ? ` We are registered with the Information Commissioner's Office under number ${ICO_NUMBER}.` : ''} We are the data controller responsible for your personal data. For any data protection enquiries, please contact us at <a href={`mailto:${CONTACT_EMAIL}`} className="text-indigo-600 hover:underline font-medium">{CONTACT_EMAIL}</a>.
         </Paragraph>
 
         <SectionTitle emoji="📦" title="2. Data We Collect" />
@@ -91,14 +106,15 @@ const PrivacyPolicy: React.FC = () => (
         <SubSection title="2.3 AI Feature Data">
             <Paragraph>When you use AI-powered features (Smart Insight, AI SQL), the following limited data may be sent to our backend proxy, which forwards requests to the OpenRouter LLM API:</Paragraph>
             <BulletList items={[
-                'Smart Insight sends a rendered chart image, its title and chart context. Images can contain visible values, labels and personal information.',
+                'Smart Insight sends a picture of the chart on screen, its title and axis names, only after you agree. The picture shows the values and labels on the chart, and can contain personal information if the chart does.',
+                'When you upload a file, the column names and summary details about each column (its type and how many distinct values it has, never the rows) are sent so the AI can work out what the columns mean. The AI may look up a column name on the web to check its meaning; only the column names and the subject of the file are used in that search.',
                 'AI SQL sends your question, query text and schema information. Values you include in questions or query filters can be present in this text.',
                 'The AI SQL enhanced mode can additionally share selected category values after its privacy consent step. Private mode does not share these category catalogues.',
             ]} />
             <Paragraph>AI SQL privacy settings apply to AI SQL requests; they do not make the separate Smart Insight image feature local-only.</Paragraph>
         </SubSection>
         <SubSection title="2.4 PostgreSQL Connections">
-            <Paragraph>PostgreSQL and SQL Server connectors operate through our backend. Connection credentials and query results pass through that backend during the active connection. These connectors have a different data path from local CSV and Excel analysis.</Paragraph>
+            <Paragraph>PostgreSQL and SQL Server connectors operate through our backend. Connection credentials and query results pass through that backend during the active connection. To let a dropped connection reconnect without asking for the password again, the backend keeps the password encrypted in memory for up to 8 hours; it is never written to disk or to your browser, and it is forgotten when you sign out, change your password or the server restarts. These connectors have a different data path from local CSV and Excel analysis.</Paragraph>
         </SubSection>
         <SubSection title="2.5 Dashboard Sync Data">
             <Paragraph>Dashboard sync stores names, layouts, formatting, source references and saved query settings, including SQL and selected filters. Query text, titles and filters can contain values you chose. Sync excludes chart-result rows, KPI values, growth statistics, generated narratives, validation output and chart images. Complete results stay in browser storage. On another device, reopen the source file or reconnect the data source to rebuild the visuals.</Paragraph>
@@ -109,6 +125,7 @@ const PrivacyPolicy: React.FC = () => (
             'To provide and maintain the QuickInsight platform',
             'To authenticate your identity and manage your account',
             'To process AI insight requests via our backend proxy',
+            'To run your plan, free trial and payments, and send account emails such as password reset links',
             'To sync dashboard configurations across your sessions',
             'To communicate important service updates',
             'To respond to your support enquiries',
@@ -124,24 +141,31 @@ const PrivacyPolicy: React.FC = () => (
 
         <SectionTitle emoji="🔐" title="5. Data Security" />
         <BulletList items={[
-            'Authentication uses JWT (JSON Web Tokens) with secure token handling',
+            'Sign-in sessions use signed tokens that last 30 days while in use; changing or resetting your password ends every other session',
             'Passwords are hashed and salted before storage — we never store plain-text passwords',
             'All communications use HTTPS/TLS encryption',
-            'Browser-side data processing means your datasets never traverse the network',
+            'Uploaded files are processed in your browser and are not uploaded to us',
+            'A Content Security Policy limits the site to loading code from QuickInsight and the few providers listed below',
             'AI proxy requests are routed through our secure backend — your data is not sent directly to third-party AI providers',
         ]} />
 
         <SectionTitle emoji="🤝" title="6. Third-Party Data Sharing" />
         <Paragraph>We do not sell, rent, or trade your personal data. Limited data sharing occurs only with:</Paragraph>
         <BulletList items={[
-            'OpenRouter LLM API — receives chart images and SQL queries when you use AI features (processed under their privacy policy)',
-            'Infrastructure providers — for hosting and database services (under strict data processing agreements)',
+            'OpenRouter (AI models) — receives your questions, column names and summaries, query text, and chart pictures you agree to send',
+            'Stripe (payments) — receives your email and payment details when you choose a paid plan; card details go to Stripe, never to us',
+            'Resend (email) — receives your email address to send password reset links',
+            'Vercel (website hosting) and Railway (backend and database hosting)',
+            'Google Fonts and jsDelivr — deliver the fonts, the in-browser query engine and map outlines; they see your IP address, not your data',
         ]} />
         <Paragraph>We do not use any third-party analytics trackers, advertising networks, or social media tracking pixels.</Paragraph>
 
         <SectionTitle emoji="⏱️" title="7. Data Retention" />
         <BulletList items={[
-            'Account data: retained while your account is active, deleted within 30 days of account deletion request',
+            'Account data: retained while your account is active, and deleted immediately when you delete your account in "Your account"',
+            'Account activity log (sign-ins and account changes): kept for 12 months',
+            'Password reset links: expire after 60 minutes and are removed a day later',
+            'Payment records: kept by Stripe as the law on accounting records requires',
             'Browser data (IndexedDB, localStorage): controlled entirely by you — clearing your browser data removes it',
             'Dashboard configurations: retained while your account is active',
             'AI request logs: automatically purged after 30 days',
@@ -150,9 +174,9 @@ const PrivacyPolicy: React.FC = () => (
         <SectionTitle emoji="✅" title="8. Your Rights (UK GDPR)" />
         <Paragraph>Under the UK GDPR, you have the following rights:</Paragraph>
         <BulletList items={[
-            'Right of access — request a copy of your personal data',
+            'Right of access — download a copy of your data at any time from "Your account", or ask us',
             'Right to rectification — correct inaccurate personal data',
-            'Right to erasure — request deletion of your personal data',
+            'Right to erasure — delete your account and its data at any time from "Your account", or ask us',
             'Right to data portability — receive your data in a structured, machine-readable format',
             'Right to restrict processing — limit how we use your data',
             'Right to object — object to processing based on legitimate interests',
@@ -192,8 +216,8 @@ const CookiesPolicy: React.FC = () => (
             Cookies are small text files stored on your device. Modern web applications also use other browser storage mechanisms such as <strong>localStorage</strong> and <strong>IndexedDB</strong>. QuickInsight primarily uses these modern storage APIs rather than traditional cookies.
         </Paragraph>
 
-        <SectionTitle emoji="🔑" title="2. Session Cookies (Essential)" />
-        <Paragraph>We use essential session cookies for authentication:</Paragraph>
+        <SectionTitle emoji="🔑" title="2. Sign-in Storage (Essential)" />
+        <Paragraph>We do not set cookies. Signing in uses essential browser storage:</Paragraph>
         <div className="overflow-x-auto mb-4">
             <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
                 <thead className="bg-gray-50">
@@ -206,8 +230,13 @@ const CookiesPolicy: React.FC = () => (
                 <tbody className="divide-y divide-gray-100">
                     <tr>
                         <td className="px-4 py-2 font-mono text-xs text-indigo-600">qi_token</td>
-                        <td className="px-4 py-2 text-gray-600">JWT authentication token</td>
-                        <td className="px-4 py-2 text-gray-600">Session / until logout</td>
+                        <td className="px-4 py-2 text-gray-600">Sign-in token (kept in localStorage)</td>
+                        <td className="px-4 py-2 text-gray-600">30 days while in use, or until you sign out</td>
+                    </tr>
+                    <tr>
+                        <td className="px-4 py-2 font-mono text-xs text-indigo-600">db_ticket_…</td>
+                        <td className="px-4 py-2 text-gray-600">Ticket to reconnect a live database (sessionStorage; never the password)</td>
+                        <td className="px-4 py-2 text-gray-600">Until the tab closes or you sign out</td>
                     </tr>
                 </tbody>
             </table>
@@ -229,6 +258,8 @@ const CookiesPolicy: React.FC = () => (
                     <tr><td className="px-4 py-2 text-gray-600">Number & date formatting</td><td className="px-4 py-2 text-gray-600">Persist your locale and format choices</td></tr>
                     <tr><td className="px-4 py-2 text-gray-600">App state (Zustand stores)</td><td className="px-4 py-2 text-gray-600">Preserve UI state across page reloads</td></tr>
                     <tr><td className="px-4 py-2 text-gray-600">Authentication token</td><td className="px-4 py-2 text-gray-600">Keep you signed in between sessions</td></tr>
+                    <tr><td className="px-4 py-2 text-gray-600">Column meanings found online</td><td className="px-4 py-2 text-gray-600">Reuse them until you sign out</td></tr>
+                    <tr><td className="px-4 py-2 text-gray-600">Chart picture permission</td><td className="px-4 py-2 text-gray-600">Remember "Don't ask again" for Smart Insight</td></tr>
                 </tbody>
             </table>
         </div>
@@ -284,14 +315,14 @@ const TermsAndConditions: React.FC = () => (
     <div>
         <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 mb-6">
             <p className="text-sm text-violet-700 font-medium">
-                📜 These terms govern your use of the QuickInsight platform operated by Astrabi Analytics. By using our service, you agree to these terms.
+                📜 These terms govern your use of the QuickInsight platform operated by {LEGAL_NAME}. By using our service, you agree to these terms.
             </p>
         </div>
         <Paragraph>Last updated: {LAST_UPDATED}</Paragraph>
 
         <SectionTitle emoji="📌" title="1. Service Description" />
         <Paragraph>
-            QuickInsight is a browser-based business intelligence and analytics platform that enables users to upload CSV/Excel data or connect to PostgreSQL databases, build interactive dashboards, run SQL queries, create visualisations, and receive AI-powered insights. The service is operated by Astrabi Analytics and is accessible at {WEBSITE}.
+            QuickInsight is a browser-based business intelligence and analytics platform that enables users to upload CSV/Excel data or connect to PostgreSQL databases, build interactive dashboards, run SQL queries, create visualisations, and receive AI-powered insights. The service is operated by {LEGAL_NAME} and is accessible at {WEBSITE}.
         </Paragraph>
 
         <SectionTitle emoji="👤" title="2. Account Terms" />
@@ -307,7 +338,7 @@ const TermsAndConditions: React.FC = () => (
             <Paragraph>You are responsible for all activity that occurs under your account. You must notify us immediately at <a href={`mailto:${CONTACT_EMAIL}`} className="text-indigo-600 hover:underline font-medium">{CONTACT_EMAIL}</a> if you suspect unauthorised access to your account.</Paragraph>
         </SubSection>
         <SubSection title="2.3 Guest Access">
-            <Paragraph>Guest access provides a limited contributor workspace for uploading data, using Question Builder, asking up to 10 AI SQL questions in a rolling 24-hour period, and creating a local dashboard. Guest users do not create a persistent account, and their dashboards are not saved to the cloud.</Paragraph>
+            <Paragraph>Guest access lets you try QuickInsight with your own file or sample data: uploading data, using Question Builder and creating a local dashboard. Asking the AI needs a free account. Guest users do not create a persistent account, and their dashboards are not saved to the cloud.</Paragraph>
         </SubSection>
 
         <SectionTitle emoji="✅" title="3. Acceptable Use" />
@@ -350,7 +381,7 @@ const TermsAndConditions: React.FC = () => (
 
         <SectionTitle emoji="🏢" title="6. Intellectual Property" />
         <SubSection title="6.1 Our IP">
-            <Paragraph>The QuickInsight platform, including its design, code, logos, documentation, and branding, is the intellectual property of Astrabi Analytics. All rights are reserved. You may not copy, modify, or distribute any part of the platform without written permission.</Paragraph>
+            <Paragraph>The QuickInsight platform, including its design, code, logos, documentation, and branding, is the intellectual property of {LEGAL_NAME}. All rights are reserved. You may not copy, modify, or distribute any part of the platform without written permission.</Paragraph>
         </SubSection>
         <SubSection title="6.2 Feedback">
             <Paragraph>If you provide suggestions, ideas, or feedback about the service, you grant us a non-exclusive, royalty-free, worldwide licence to use such feedback to improve our products and services.</Paragraph>
@@ -375,20 +406,22 @@ const TermsAndConditions: React.FC = () => (
         ]} />
 
         <SectionTitle emoji="💳" title="9. Payment Terms" />
-        <Paragraph>If applicable to your plan:</Paragraph>
         <BulletList items={[
-            'Fees are as stated at the time of purchase and may be updated with 30 days\' notice',
+            'New accounts get a free trial of a paid plan; when it ends the account moves to the Free plan unless you choose a paid plan',
+            'Paid plans are billed in advance through Stripe; the price is shown before you pay',
+            'You can cancel, change card or download invoices at any time from "Your account" → "Manage billing and invoices"; a cancelled plan stays active until the end of the period already paid for',
+            'Fees may change with 30 days\' notice',
             'All fees are exclusive of VAT unless stated otherwise',
             'Refund requests are handled on a case-by-case basis',
         ]} />
 
         <SectionTitle emoji="🚪" title="10. Termination" />
         <BulletList items={[
-            'You may close your account at any time by contacting us',
+            'You may delete your account at any time from "Your account", or by contacting us',
             'We may suspend or terminate your account if you breach these terms',
             'Upon termination, your right to use the service ceases immediately',
             'Data in your browser (IndexedDB, localStorage) remains until you clear it',
-            'Server-side data (account info, dashboards) will be deleted within 30 days of account closure',
+            'Server-side data (account info, dashboards, usage) is deleted when the account is deleted',
         ]} />
 
         <SectionTitle emoji="🏛️" title="11. Governing Law" />
@@ -557,7 +590,7 @@ const ContactUs: React.FC = () => {
                             <MapPin className="w-5 h-5 text-indigo-500 mt-0.5 shrink-0" />
                             <div>
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address</p>
-                                <p className="text-sm text-gray-700">Astrabi Analytics<br />United Kingdom</p>
+                                <p className="text-sm text-gray-700">{LEGAL_NAME}<br />{REGISTERED_ADDRESS || 'United Kingdom'}{COMPANY_NUMBER ? <><br />Company number {COMPANY_NUMBER}</> : null}</p>
                             </div>
                         </div>
 
@@ -676,7 +709,7 @@ export const LegalPage: React.FC<LegalPageProps> = ({ onClose }) => {
                             {TABS.find(t => t.key === activeTab)?.label}
                         </h1>
                         <p className="text-sm text-gray-500 mt-1">
-                            Astrabi Analytics — {WEBSITE} • Last updated: {LAST_UPDATED}
+                            {LEGAL_NAME} — {WEBSITE} • Last updated: {LAST_UPDATED}
                         </p>
                     </div>
 
@@ -685,7 +718,7 @@ export const LegalPage: React.FC<LegalPageProps> = ({ onClose }) => {
 
                     {/* Footer */}
                     <div className="mt-12 pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-400">
-                        <p>© {CURRENT_YEAR} Astrabi Analytics. All rights reserved.</p>
+                        <p>© {CURRENT_YEAR} {LEGAL_NAME}. All rights reserved.</p>
                         <div className="flex items-center gap-4">
                             <button onClick={() => setActiveTab('privacy')} className="hover:text-indigo-500 transition-colors">Privacy</button>
                             <button onClick={() => setActiveTab('cookies')} className="hover:text-indigo-500 transition-colors">Cookies</button>

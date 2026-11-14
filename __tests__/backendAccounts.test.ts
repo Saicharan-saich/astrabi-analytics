@@ -14,6 +14,7 @@ function fakeDb() {
     const users: User[] = [];
     let resets: Reset[] = [];
     const deleted: string[] = [];
+    const purged: { table: string; params: any[] }[] = [];
     const query = async (sql: string, params: any[] = []) => {
         const s = sql.replace(/\s+/g, ' ').trim();
         if (/^SELECT id, email, name, is_active FROM users WHERE email/.test(s)) return { rows: users.filter(u => u.email === params[0]) };
@@ -34,6 +35,7 @@ function fakeDb() {
         if (/^SELECT COUNT\(\*\)::int AS n FROM users WHERE role = 'admin'/.test(s)) return { rows: [{ n: users.filter(u => u.role === 'admin' && u.is_active).length }] };
         if (/^SELECT id, email, name, role, is_active, daily_ai_limit, created_at FROM users WHERE id/.test(s)) return { rows: users.filter(u => u.id === params[0]).map(({ password_hash, ...rest }) => rest) };
         if (/^SELECT .* FROM (dashboards|usage_logs|user_activities|subscriptions)/.test(s)) return { rows: [] };
+        if (/^DELETE FROM (usage_logs|user_activities|password_resets) WHERE/.test(s)) { purged.push({ table: s.split(' ')[2], params }); return { rows: [], rowCount: 3 }; }
         throw new Error(`unexpected query: ${s}`);
     };
     const pool = {
@@ -47,7 +49,7 @@ function fakeDb() {
             release: () => {},
         }),
     };
-    return { pool, users, resets: () => resets, deleted };
+    return { pool, users, resets: () => resets, deleted, purged };
 }
 
 // Stand-ins for jsonwebtoken and bcryptjs: the service only uses sign() and hash()/compare().
@@ -141,5 +143,17 @@ describe('your data', () => {
         expect(await service.deleteAccount('u1', 'oldpassword')).toEqual({ ok: true });
         expect(db.deleted).toEqual(['u1']);
         expect(db.users.map(u => u.id)).toEqual(['a1']);
+    });
+});
+
+describe('keeping records', () => {
+    it('removes AI usage logs after 30 days, the activity log after a year, and old reset links', async () => {
+        const removed = await service.purgeOldRecords();
+        expect(removed).toEqual({ usage_logs: 3, user_activities: 3, password_resets: 3 });
+        expect(db.purged).toEqual([
+            { table: 'usage_logs', params: [30] },
+            { table: 'user_activities', params: [365] },
+            { table: 'password_resets', params: [] },
+        ]);
     });
 });

@@ -83,10 +83,13 @@ const BenchmarkLabView = React.lazy(() =>
   import('./components/BenchmarkLabView').then(module => ({ default: module.BenchmarkLabView }))
 );
 
-// ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
-// Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
-// Never persisted to localStorage/IndexedDB — password stays ephemeral.
-interface CachedCredentials { host: string; port: string; database: string; username: string; password: string; ssl: boolean }
+// ── SESSION RECONNECT TICKETS (auto-reconnect without re-entering password) ──
+// The database password stays on the server (backend/connectionVault.js). The
+// browser keeps only the reconnect ticket, in sessionStorage: it survives a page
+// refresh, is cleared on tab close or logout, and is useless to anyone else.
+interface ReconnectTicket { reconnectToken: string }
+const TICKET_PREFIX = 'db_ticket_';
+const LEGACY_PASSWORD_PREFIX = 'db_creds_';
 
 /** Build and attach the richer AI SQL model while the cleaned dataset is being
  * created or revised. It is then persisted with the dataset and reused by
@@ -102,30 +105,39 @@ function refreshAISQLSemanticSnapshot(dataset: Dataset, reason: string): void {
   }
 }
 
-function cacheSessionCredentials(datasetId: string, creds: CachedCredentials): void {
+function cacheSessionCredentials(datasetId: string, ticket: ReconnectTicket): void {
   try {
-    sessionStorage.setItem(`db_creds_${datasetId}`, JSON.stringify(creds));
-    console.log('[Session] Cached DB credentials for auto-reconnect');
+    if (!ticket.reconnectToken) return;
+    sessionStorage.setItem(`${TICKET_PREFIX}${datasetId}`, JSON.stringify({ reconnectToken: ticket.reconnectToken }));
   } catch { /* sessionStorage unavailable — silent fallback */ }
 }
 
-function getSessionCredentials(datasetId: string): CachedCredentials | null {
+function getSessionCredentials(datasetId: string): ReconnectTicket | null {
   try {
-    const raw = sessionStorage.getItem(`db_creds_${datasetId}`);
-    return raw ? JSON.parse(raw) : null;
+    const raw = sessionStorage.getItem(`${TICKET_PREFIX}${datasetId}`);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed.reconnectToken === 'string' ? parsed : null;
   } catch { return null; }
 }
+
+/** Earlier versions kept database passwords in sessionStorage; remove any left behind. */
+function removeLegacySavedPasswords(): void {
+  try {
+    Object.keys(sessionStorage).filter(k => k.startsWith(LEGACY_PASSWORD_PREFIX)).forEach(k => sessionStorage.removeItem(k));
+  } catch { /* silent */ }
+}
+removeLegacySavedPasswords();
 
 function clearSessionCredentials(datasetId?: string): void {
   try {
     if (datasetId) {
-      sessionStorage.removeItem(`db_creds_${datasetId}`);
+      sessionStorage.removeItem(`${TICKET_PREFIX}${datasetId}`);
     } else {
-      // Clear ALL cached credentials (used on logout)
-      const keys = Object.keys(sessionStorage).filter(k => k.startsWith('db_creds_'));
-      keys.forEach(k => sessionStorage.removeItem(k));
+      // Clear every ticket (used on logout)
+      Object.keys(sessionStorage).filter(k => k.startsWith(TICKET_PREFIX)).forEach(k => sessionStorage.removeItem(k));
     }
   } catch { /* silent */ }
+  removeLegacySavedPasswords();
 }
 
 // ── Heuristic domain detection (fallback when AI profiling unavailable) ──
@@ -1212,15 +1224,8 @@ function App() {
         saveDatasetToDB(connDs);
 
         // ── CACHE CREDENTIALS for session auto-reconnect ──
-        if (liveInfo?._sessionPassword && liveInfo.host && liveInfo.username) {
-          cacheSessionCredentials(connDs.id, {
-            host: liveInfo.host,
-            port: liveInfo.port || '1433',
-            database: liveInfo.database || '',
-            username: liveInfo.username,
-            password: liveInfo._sessionPassword,
-            ssl: liveInfo.ssl ?? false,
-          });
+        if (liveInfo?._reconnectToken) {
+          cacheSessionCredentials(connDs.id, { reconnectToken: liveInfo._reconnectToken });
         }
 
         setPendingProfile(connProfile);
@@ -1399,7 +1404,7 @@ function App() {
             // Reset refresh lock BEFORE reconnect so the re-triggered refresh can proceed
             isRefreshingRef.current = false;
             setIsLiveRefreshing(false);
-            await handleReconnect(cached);
+            await handleReconnect({ reconnectToken: cached.reconnectToken });
             return; // Success — refresh was re-triggered inside handleReconnect
           } catch (autoErr: any) {
             console.warn('[App] Auto-reconnect failed, showing modal:', autoErr.message);
@@ -1493,11 +1498,17 @@ function App() {
 
   // ── RECONNECT — Re-establish expired live database connection ──
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.quickinsight.co.uk';
-  const handleReconnect = async (config: { host: string; port: string; database: string; username: string; password: string; ssl: boolean }) => {
+  // Either the password the person typed in the reconnect box, or the ticket
+  // from this session (the server keeps the password for it).
+  type ReconnectRequest =
+    | { reconnectToken: string }
+    | { host: string; port: string; database: string; username: string; password: string; ssl: boolean };
+  const handleReconnect = async (request: ReconnectRequest) => {
     if (!dataset?.liveConnection) return;
     const lc = dataset.liveConnection;
     const isPostgres = lc.dbType === 'pg';
-    const endpoint = isPostgres ? '/api/pg/connect' : '/api/connect';
+    const withTicket = 'reconnectToken' in request;
+    const endpoint = withTicket ? '/api/reconnect' : isPostgres ? '/api/pg/connect' : '/api/connect';
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
@@ -1507,38 +1518,38 @@ function App() {
           ? { Authorization: `Bearer ${localStorage.getItem('qi_token')}` }
           : {}),
       },
-      body: JSON.stringify({
-        host: config.host,
-        port: config.port,
-        database: config.database,
-        username: config.username,
-        password: config.password,
-        ssl: config.ssl,
+      body: JSON.stringify(withTicket ? { reconnectToken: request.reconnectToken } : {
+        host: request.host,
+        port: request.port,
+        database: request.database,
+        username: request.username,
+        password: request.password,
+        ssl: request.ssl,
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     if (!data.success) {
       setReconnectError(data.error || 'Reconnection failed');
-      throw new Error(data.error);
+      throw new Error(data.error || 'Reconnection failed');
     }
 
     // Update connectionId AND persist non-sensitive metadata for future reconnects
-    const updatedLc = {
+    const updatedLc = withTicket ? { ...lc, connectionId: data.connectionId } : {
       ...lc,
       connectionId: data.connectionId,
-      host: config.host,
-      port: config.port,
-      database: config.database,
-      username: config.username,
-      ssl: config.ssl,
+      host: request.host,
+      port: request.port,
+      database: request.database,
+      username: request.username,
+      ssl: request.ssl,
     };
     const updatedDs: Dataset = { ...dataset, liveConnection: updatedLc };
     setDataset(updatedDs);
     saveDatasetToDB(updatedDs);
 
-    // ── CACHE CREDENTIALS in sessionStorage for auto-reconnect ──
-    cacheSessionCredentials(dataset.id, config);
+    // ── Keep the new reconnect ticket (never the password) for auto-reconnect ──
+    if (data.reconnectToken) cacheSessionCredentials(dataset.id, { reconnectToken: data.reconnectToken });
 
     // Close modal and re-trigger refresh
     setShowReconnectModal(false);

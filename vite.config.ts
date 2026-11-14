@@ -1,7 +1,21 @@
 import path from 'path';
+import { readFileSync } from 'fs';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { assertNoClientSecrets } from './config/clientEnvSecurity';
+
+/** The security headers Vercel sends (vercel.json), so `vite preview` — which the
+ * browser tests run against — behaves like the live site. Strict-Transport-Security
+ * is left out locally because the preview is plain http. */
+function siteHeaders(): Record<string, string> {
+    try {
+        const config = JSON.parse(readFileSync(path.resolve(__dirname, 'vercel.json'), 'utf8'));
+        const entries = (config.headers?.[0]?.headers ?? []) as { key: string; value: string }[];
+        return Object.fromEntries(entries.filter(h => h.key !== 'Strict-Transport-Security').map(h => [h.key, h.value]));
+    } catch {
+        return {};
+    }
+}
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -10,6 +24,9 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+      },
+      preview: {
+        headers: siteHeaders(),
       },
       plugins: [react()],
       resolve: {

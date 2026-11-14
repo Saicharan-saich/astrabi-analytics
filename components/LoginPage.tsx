@@ -3,7 +3,8 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useDashboardStore } from '../store/useDashboardStore';
 import { UserRole } from '../types';
 import { PreLoginTour } from './PreLoginTour';
-import { Eye, EyeOff, LogIn, AlertCircle, UserPlus, Users, Shield, BarChart2, Brain, Zap, Mail, KeyRound, Check } from 'lucide-react';
+import { PricingDialog } from './PricingDialog';
+import { Eye, EyeOff, LogIn, AlertCircle, UserPlus, Users, Shield, BarChart2, Brain, Zap, Mail, KeyRound, Check, Tag } from 'lucide-react';
 
 interface LoginPageProps {
     onShowLegal?: () => void;
@@ -23,6 +24,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
     const resetToken = (() => { try { return new URLSearchParams(window.location.search).get('reset') || ''; } catch { return ''; } })();
     const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset'>(resetToken ? 'reset' : 'login');
     const [notice, setNotice] = useState('');
+    const [showPricing, setShowPricing] = useState(false);
     const [showTour, setShowTour] = useState(!resetToken);
     const loginAsGuest = useAuthStore(s => s.loginAsGuest);
 
@@ -353,6 +355,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                 {/* Footer */}
                 <div className="mt-3 text-center">
                     <span className="qi-auth-muted text-[11px] font-mono">v3.0</span>
+                    <span className="qi-auth-muted text-[11px] mx-1.5">·</span>
+                    <button type="button" onClick={() => setShowPricing(true)} className="qi-auth-muted text-[11px] hover:text-[var(--color-primary)] transition-colors inline-flex items-center gap-1">
+                        <Tag className="w-2.5 h-2.5" /> Plans & prices
+                    </button>
                     {onShowLegal && (
                         <>
                             <span className="qi-auth-muted text-[11px] mx-1.5">·</span>
@@ -363,6 +369,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                     )}
                 </div>
             </div>
+            {showPricing && (
+                <PricingDialog
+                    onClose={() => setShowPricing(false)}
+                    onStart={() => { setShowPricing(false); setMode('register'); setError(''); setNotice(''); }}
+                />
+            )}
         </div>
     );
 };
