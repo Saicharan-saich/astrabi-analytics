@@ -1,0 +1,23 @@
+name: Resolve SheetJS lock entry (temporary)
+permissions:
+  contents: read
+on:
+  push:
+    branches: [fix-xlsx-lock]
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+      - run: git diff --stat && grep -n '"node_modules/xlsx"' -A8 package-lock.json && grep -n '"xlsx"' package.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xlsx-lock
+          path: |
+            package.json
+            package-lock.json
