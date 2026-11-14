@@ -5716,3 +5716,13 @@ html.dark .qi-account-done { color: #75e0a7; }
 .qi-pricing-card li, .qi-pricing-facts li { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: var(--text-primary); }
 .qi-pricing-card li svg, .qi-pricing-facts li svg { flex: none; margin-top: 3px; color: var(--color-primary); }
 .qi-pricing-facts { margin: 16px 0 4px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
+
+/* Totals check after upload */
+.qi-totals { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border-default); font-size: 13px; line-height: 1.5; color: var(--text-primary); }
+.qi-totals strong { display: block; font-weight: 650; }
+.qi-totals p { margin: 2px 0 0; color: var(--text-secondary); }
+.qi-totals > svg { flex: none; margin-top: 2px; }
+.qi-totals.is-ok > svg { color: var(--color-success, #16a34a); }
+.qi-totals.is-warn { border-color: color-mix(in srgb, #d97706 45%, var(--border-default)); background: color-mix(in srgb, #d97706 8%, transparent); }
+.qi-totals.is-warn > svg { color: #d97706; }
+.qi-totals-link { margin-top: 4px; font-weight: 600; color: var(--color-primary); }

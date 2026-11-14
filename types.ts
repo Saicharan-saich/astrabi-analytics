@@ -52,6 +52,8 @@ export interface ETLLog {
   removedRowSamples?: Record<string, any>[];
   /** Before/after value samples for column transforms */
   transformSamples?: { column: string; before: any; after: any }[];
+  /** Totals check: each measure's total in the file vs after cleaning. */
+  totalsCheck?: { column: string; uploaded: number | null; cleaned: number; blanked: number; changed: number }[];
   /** Re-run the cleaning with this option to reverse (or restore) the step. */
   revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | Record<string, string> | CleaningRule[] | null; label: string };
   /** A flag the user can decide on in the cleaning review. */

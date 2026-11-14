@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { NoDataYet } from './NoDataYet';
-import { ChevronDown, ChevronRight, Columns3, Compass, Database, Download, MessageCircleQuestion, Upload, Zap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Columns3, Compass, Database, Download, MessageCircleQuestion, Upload, Zap } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions, Tab } from '../types';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
@@ -371,6 +371,22 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                 <div className="mt-6 space-y-5">
                     {view === 'overview' && facts && (
                         <>
+                            {(() => {
+                                // Every upload checks that cleaning kept each measure's total (services/totalsCheck.ts).
+                                const totals = dataset.etlLogs?.find(l => l.step === 'Totals Check');
+                                if (!totals) return null;
+                                const ok = totals.status === 'applied';
+                                return (
+                                    <div className={`qi-totals ${ok ? 'is-ok' : 'is-warn'}`} role={ok ? 'status' : 'alert'}>
+                                        {ok ? <CheckCircle2 className="h-4 w-4" aria-hidden /> : <AlertTriangle className="h-4 w-4" aria-hidden />}
+                                        <div>
+                                            <strong>{ok ? 'Totals match your file' : 'Some totals differ from your file'}</strong>
+                                            <p>{ok ? totals.details.replace(/^Every total matches the file: /, '') : totals.details}</p>
+                                            {!ok && <button type="button" className="qi-totals-link" onClick={() => setView('cleaning')}>See what cleaning changed</button>}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                             <nav className="qi-next" aria-label="What to do next">
                                 <p className="qi-next-label">What would you like to do next?</p>
                                 <div className="qi-next-grid">

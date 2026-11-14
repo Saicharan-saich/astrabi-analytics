@@ -224,6 +224,10 @@ for (const theme of ['light', 'dark'] as const) {
         const ready = page.getByRole('dialog', { name: /ready for analysis/ });
         await ready.waitFor({ timeout: 90000 });
         await ready.getByRole('button', { name: 'Close' }).click();
+        // Every upload checks that cleaning kept each total.
+        await go(page, 'Dataset Workspace');
+        await expect(page.locator('.qi-totals')).toContainText('Totals match your file');
+        await shoot(page, `78-totals-check-${theme}`);
         await go(page, 'AI SQL');
         const box = page.getByLabel('Ask a question about your data');
         const ask = async (question: string) => {

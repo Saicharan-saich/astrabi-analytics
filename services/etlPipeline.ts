@@ -17,6 +17,7 @@ import { localDateKey } from '../utils/dateKey';
 import { isLabelName, isYesNoValues } from '../utils/twoValues';
 import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, EtlOptions, PhysicalDataType, TimeContext } from '../types';
 import { generateDimDate } from './dimDateGenerator';
+import { checkTotals, describeTotals } from './totalsCheck';
 import { convertMixedUnits, runQualityChecks } from './etlQualityChecks';
 import {
     parseLocaleNumber, hasCurrencyMarker, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
@@ -680,19 +681,8 @@ function layer1_structuralNormalization(
 
     // ── 1a: Header Normalization ──
     {
-        const headerMap: Record<string, string> = {};
-        let renamedCount = 0;
-        const used = new Map<string, number>();
-        const collisions: string[] = [];
-        Object.keys(rows[0]).forEach((h, index) => {
-            let normalized = normalizeHeaderName(h, index);
-            // "Sales" and "sales " normalise to the same name: keep both columns.
-            const n = (used.get(normalized) || 0) + 1;
-            used.set(normalized, n);
-            if (n > 1) { collisions.push(`${h} → ${normalized}_${n}`); normalized = `${normalized}_${n}`; }
-            headerMap[h] = normalized;
-            if (h !== normalized) renamedCount++;
-        });
+        const { headerMap, collisions } = headerMapFor(Object.keys(rows[0]));
+        const renamedCount = Object.entries(headerMap).filter(([h, normalized]) => h !== normalized).length;
         if (collisions.length > 0) {
             logs.push(log('Header Collision', 1, 'applied',
                 `${collisions.length} header(s) became identical after normalising and were kept separately: ${collisions.join(', ')}.`,
@@ -1618,6 +1608,22 @@ function isValidNormalizedValue(value: any, type: ColumnType): boolean {
 }
 
 /** snake_case column name for a raw header ("Price (£)" → "price"). */
+/** Uploaded header → cleaned column name, exactly as header normalisation does it. */
+export function headerMapFor(headers: string[]): { headerMap: Record<string, string>; collisions: string[] } {
+    const headerMap: Record<string, string> = {};
+    const used = new Map<string, number>();
+    const collisions: string[] = [];
+    headers.forEach((h, index) => {
+        let normalized = normalizeHeaderName(h, index);
+        // "Sales" and "sales " normalise to the same name: keep both columns.
+        const n = (used.get(normalized) || 0) + 1;
+        used.set(normalized, n);
+        if (n > 1) { collisions.push(`${h} → ${normalized}_${n}`); normalized = `${normalized}_${n}`; }
+        headerMap[h] = normalized;
+    });
+    return { headerMap, collisions };
+}
+
 export function normalizeHeaderName(header: string, index: number): string {
     // Insert underscore before camelCase boundaries: SaleDate → Sale_Date, OrderID → Order_ID
     const camelSplit = header.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
@@ -2365,6 +2371,23 @@ export function runETLPipeline(
     const finalColumns = l5b.columns;
     allLogs.push(...l5b.logs);
     console.log(`[ETL L5b] Hardening: ${l5b.logs.filter(l => l.status === 'applied').length} merge(s), ${l5b.logs.filter(l => l.status === 'info').length} flag(s)`);
+
+    // ── LAYER 5c: Totals check — every measure still adds up to the file, or we say why not ──
+    {
+        const present = (column: string) => column in (rows[0] || {}) && column in (preTransformRows[0] || {});
+        const measures = finalColumns.filter(c => c.type === 'METRIC' && present(c.name)).map(c => c.name);
+        const uploadedHeaders = Object.keys(rawData[0] || {});
+        const { headerMap } = headerMapFor(uploadedHeaders);
+        const uploadedFor = new Map(Object.entries(headerMap).map(([header, column]) => [column, header] as const));
+        const check = checkTotals(rawData, preTransformRows, rows, measures, column => uploadedFor.get(column) ?? null);
+        const { matches, lines } = describeTotals(check);
+        if (lines.length) {
+            allLogs.push(log('Totals Check', 5, matches ? 'applied' : 'info', lines.join(' '), {
+                affectedColumns: (matches ? check.measures : check.differences).map(m => m.column),
+                totalsCheck: check.measures.map(m => ({ column: m.column, uploaded: m.uploaded, cleaned: m.cleaned, blanked: m.blanked.cells, changed: m.changed.cells })),
+            }));
+        }
+    }
 
     // ── LAYER 6: Data Contract Validation ──
     const l6 = layer6_dataContractValidation(rows, finalColumns);
