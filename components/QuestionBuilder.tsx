@@ -1329,7 +1329,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         >
                             <SlidersHorizontal className="w-3.5 h-3.5" />
                             Options
-                            {optionsInUse && <span className="qi-options-dot" aria-label="(in use)" />}
+                            {optionsInUse && <span className="qi-options-dot" aria-hidden="true" title="In use" />}
                         </button>}
 
                         {/* ═══ Enhancement 3: Consolidated Filter Button ═══ */}
