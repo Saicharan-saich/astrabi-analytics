@@ -229,12 +229,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const isTimeDimension = !!timeGrain;
     // Effective dimension sent to the engine (timeGrain takes priority)
     const effectiveDimension = timeGrain || dimension;
-    // Auto-expand options row when any refinement is active
-    useEffect(() => {
-        if (comparison || (limit > 0) || (isTimeDimension && sort !== 'oldest') || (!isTimeDimension && sort !== 'desc')) {
-            setShowOptions(true);
-        }
-    }, [comparison, limit, sort, isTimeDimension, timeGrain]);
+    // Options is a pop-up, so it never opens by itself: the button shows a dot
+    // when a refinement (top N, extra number or split) is in use.
+    const optionsInUse = limit > 0 || secondaryMetrics.length > 0 || secondaryDimensions.length > 0;
 
     // Keep the Options panel in the larger usable side of the viewport.
     useEffect(() => {
@@ -1332,6 +1329,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         >
                             <SlidersHorizontal className="w-3.5 h-3.5" />
                             Options
+                            {optionsInUse && <span className="qi-options-dot" aria-label="(in use)" />}
                         </button>}
 
                         {/* ═══ Enhancement 3: Consolidated Filter Button ═══ */}
@@ -1409,13 +1407,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 value=""
                                 onChange={val => { if (val) setSecondaryMetrics(prev => [...prev, val]); }}
                                 options={[
-                                    { label: 'Another number', value: '' },
+                                    { label: 'A number…', value: '' },
                                     ...metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).map(m => ({ label: columnLabel(m), value: m }))
                                 ]}
                                 icon={<span className="text-xl leading-none -mt-1 font-normal">+</span>}
                                 colorTextClass="text-purple-400"
                                 colorRingClass="focus:ring-purple-500/30"
-                                placeholder="Another number"
+                                placeholder="A number…"
                             />
                         </div>
                     )}
@@ -1429,13 +1427,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 value=""
                                 onChange={val => { if (val) setSecondaryDimensions(prev => [...prev, val]); }}
                                 options={[
-                                    { label: 'Pick a column', value: '' },
+                                    { label: 'A column…', value: '' },
                                     ...dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).map(d => ({ label: columnLabel(d), value: d }))
                                 ]}
                                 icon={<span className="text-xl leading-none -mt-1 font-normal">+</span>}
                                 colorTextClass="text-blue-400"
                                 colorRingClass="focus:ring-blue-500/30"
-                                placeholder="Pick a column"
+                                placeholder="A column…"
                             />
                         </div>
                     )}

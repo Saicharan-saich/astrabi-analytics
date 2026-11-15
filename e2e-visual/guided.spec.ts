@@ -101,7 +101,7 @@ for (const theme of ['light', 'dark'] as const) {
         await splitBy.click();
 
         // Compare and Calc use the whole panel and say what they need.
-        await page.getByRole('button', { name: 'Calc', exact: true }).first().click();
+        await page.getByRole('button', { name: 'Calculations', exact: true }).first().click();
         await expect(page.locator('.qi-builder-wide:visible')).toContainText('Add a calculation');
         const calcWidth = await page.locator('.qi-builder-wide:visible').first().evaluate(el => el.getBoundingClientRect().width);
         expect(calcWidth).toBeGreaterThan(200);
