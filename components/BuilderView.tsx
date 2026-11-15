@@ -995,8 +995,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     <div className="qi-builder-actions-toolbar flex flex-wrap items-center gap-1.5 min-w-0 ml-auto">
                         {/* Actions stay beside the workspace tabs; the redundant summary now lives in the result view. */}
                         {/* Export */}
-                        <button onClick={exportToCSV} className="qi-cmd-icon" aria-label="Export CSV" title="Export the result as CSV">
-                            <Download className="w-4 h-4" />
+                        <button onClick={exportToCSV} className="qi-cmd-button qi-cmd-csv" aria-label="Export CSV" title="Download the numbers as a CSV file (opens in Excel)">
+                            <Download className="w-4 h-4" /><span className="qi-cmd-label">CSV</span>
                         </button>
 
                         {/* Cancel Edit button — only in edit mode */}

@@ -2660,7 +2660,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     <button
                         onClick={exportChart}
                         className="p-2 rounded-lg text-sm font-bold transition-all shadow-sm text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
-                        title="Download Chart as PNG"
+                        title="Download the chart as a picture (PNG)"
+                        aria-label="Download chart picture"
                     >
                         <Download className="w-4 h-4" />
                     </button>
@@ -2673,7 +2674,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 ? 'bg-blue-600 text-white ring-2 ring-blue-300 shadow-blue-200 shadow-lg'
                                 : 'text-blue-700 bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md hover:scale-105'
                                 }`}
-                            title="Get smart interpretation of this chart (visual only — no data access)"
+                            title="Describe this chart with AI (asks before sending a picture of it)"
                             aria-label="Smart Insight"
                         >
                             <Sparkles className="w-4 h-4" aria-hidden />
@@ -2744,7 +2745,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             {!hideControls && chartSuggestions && chartSuggestions.suggestions.length > 1 && (
                 <div className="qi-chart-suggestions flex items-center gap-1.5 overflow-x-auto px-4 py-2 shrink-0" role="group" aria-label="Other ways to show this result">
                     <span className="qi-chart-suggestions-label mr-1 flex shrink-0 items-center gap-1 text-[11px] font-semibold uppercase tracking-wide">
-                        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Views
+                        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Suggested
                     </span>
                     {chartSuggestions.suggestions.slice(0, 5).map((suggestion, index) => {
                         const Icon = CHART_TYPE_OPTIONS.flatMap(group => group.items).find(item => item.id === suggestion.type)?.icon || BarChart2;
