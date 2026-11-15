@@ -145,14 +145,15 @@ async function isBackendAvailable(): Promise<boolean> {
     try {
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
-        const resp = await fetch(API_ENDPOINT.replace('/api/ai/profile-dataset', '/api/ai/health'), {
+        // /api/ready says whether the server is up and has an AI key set.
+        const resp = await fetch(API_ENDPOINT.replace('/api/ai/profile-dataset', '/api/ready'), {
             method: 'GET',
             signal: controller.signal,
         }).catch(() => null);
         clearTimeout(tid);
 
-        // Even a 404 means the server IS up (just no /health route)
-        _backendAvailable = resp !== null;
+        const ready = resp ? await resp.json().catch(() => null) : null;
+        _backendAvailable = resp !== null && (!ready || ready.ai !== 'unavailable');
     } catch {
         _backendAvailable = false;
     }
