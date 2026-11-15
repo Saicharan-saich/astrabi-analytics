@@ -151,6 +151,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     // toggling filters). Only the newest requested analysis is allowed to
     // update the visible result; a slower older run must never overwrite it.
     const runSequenceRef = useRef(0);
+    /** The question the builder opened on by itself, if any. */
+    const startingSignatureRef = useRef<string | null>(null);
     // The user's own pick from the chart menu or the "Views" chips.
     const chooseChartType = useCallback((type: string) => {
         const config = requestedConfigRef.current || lastRunConfig;
@@ -343,13 +345,17 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const handleRun = async (config: any, options: { recordHistory?: boolean; startingPoint?: boolean } = {}) => {
         const nextRequestedConfig = JSON.parse(JSON.stringify(config));
         const previousRequestedConfig = requestedConfigRef.current;
-        if (options.recordHistory !== false && !options.startingPoint && previousRequestedConfig
+        // The answer the builder opens on — and the controls re-running that same
+        // question once they have filled in — is not a step the user took.
+        const isStartingPoint = Boolean(options.startingPoint)
+            || (!previousRequestedConfig && startingSignatureRef.current !== null && startingSignatureRef.current === configSignature(config));
+        if (options.startingPoint) startingSignatureRef.current = configSignature(config);
+        if (options.recordHistory !== false && !isStartingPoint && previousRequestedConfig
             && JSON.stringify(previousRequestedConfig) !== JSON.stringify(nextRequestedConfig)) {
             undoHistoryRef.current = [...undoHistoryRef.current, previousRequestedConfig].slice(-30);
             setUndoDepth(undoHistoryRef.current.length);
         }
-        // The answer the builder opens on is not a step the user took, so it is not undone to.
-        if (!options.startingPoint) requestedConfigRef.current = nextRequestedConfig;
+        if (!isStartingPoint) requestedConfigRef.current = nextRequestedConfig;
 
         const runSequence = ++runSequenceRef.current;
         try {

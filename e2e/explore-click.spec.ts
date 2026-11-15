@@ -58,6 +58,8 @@ test('clicking a bar filters, breaks down and shows the rows behind it', async (
     await page.getByRole('button', { name: 'Question Builder', exact: true }).click();
     await page.locator('.qi-builder-dimension button[aria-haspopup="listbox"]').first().click();
     await page.getByRole('option', { name: 'Region', exact: true }).click();
+    // The builder opens on its own answer first; wait for the one by region.
+    await expect(page.locator('.qi-builder-headline-title:visible')).toContainText(/region/i, { timeout: 30000 });
     await expect(page.getByText(/to filter it, break it down or see its rows/)).toBeVisible({ timeout: 30000 });
 
     // Click a bar → menu → break it down by vendor.
