@@ -7,6 +7,8 @@ export interface SelectOption {
     label: string;
     value: string;
     group?: string;
+    /** A short note shown on the right, e.g. "4 groups". */
+    hint?: string;
 }
 
 interface QuerySelectProps {
@@ -232,8 +234,11 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                                                 }`}
                                             style={value !== opt.value ? { color: '#e2e8f0' } : undefined}
                                         >
-                                            {opt.label}
-                                            {value === opt.value && <Check className="w-4 h-4" />}
+                                            <span className="min-w-0 truncate">{opt.label}</span>
+                                            <span className="ml-3 flex shrink-0 items-center gap-2">
+                                                {opt.hint && <span className="qi-dropdown-hint text-[11px] font-medium text-slate-500" aria-hidden="true">{opt.hint}</span>}
+                                                {value === opt.value && <Check className="w-4 h-4" />}
+                                            </span>
                                         </button>
                                     ))}
                                 </div>

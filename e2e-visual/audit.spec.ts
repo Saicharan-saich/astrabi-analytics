@@ -41,7 +41,7 @@ test('light mode audit', async ({ page }) => {
     if (await nav('Question Builder')) {
         await capture('builder');
         if (await click(page.locator('.qi-builder-dimension button[aria-haspopup="listbox"]'))) {
-            await click(page.getByRole('option', { name: 'category', exact: true }));
+            await click(page.getByRole('option', { name: 'Category', exact: true }));
             await page.waitForTimeout(2000);
         }
         await capture('builder-result');

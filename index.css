@@ -5739,3 +5739,9 @@ html.dark .qi-filter-menu .qi-filter-choice span span:last-child { color: #94a3b
 .qi-builder-starters > span { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); margin-right: 2px; }
 .qi-builder-starters button { min-height: 32px; padding: 0 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; color: var(--text-primary); background: var(--bg-surface, var(--bg-app)); border: 1px solid var(--border-strong); }
 .qi-builder-starters button:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.qi-dropdown-option--selected .qi-dropdown-hint { color: inherit !important; opacity: 0.8; }
+
+/* Question Builder side panel: Compare and Calc use the whole width */
+.qi-builder-dock .qi-question-builder > .flex > .flex-wrap > .qi-builder-wide { grid-column: 1 / -1 !important; }
+.qi-builder-needs { color: #b45309; }
+html.dark .qi-builder-needs { color: #fbbf24; }

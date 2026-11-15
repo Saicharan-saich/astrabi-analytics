@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { columnLabel } from '../utils/columnLabel';
 import ReactDOM from 'react-dom';
 import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock, Check, Search, Calculator, GitCompareArrows, Blocks, Tag, CalendarDays } from 'lucide-react';
-import { Dataset } from '../types';
+import { ColumnType, Dataset } from '../types';
 import type { TableCalculation } from '../utils/tableCalculations';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
 import { Tooltip } from './Tooltip';
-import { QuerySelect } from './QuerySelect';
+import { QuerySelect, type SelectOption } from './QuerySelect';
 import { resolvePhysicalBuilderFields } from '../services/questionBuilderFieldGuard';
 import { questionBuilderColumns } from '../services/questionBuilderColumns';
 import { describeBuilderQuestion } from '../utils/builderAnswer';
@@ -453,6 +453,40 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     // boolean flags, even when an AI profile suggests hiding a field.
     const { metrics, dimensions: dims, countable: countableColumns, dates: dateColumns } = questionBuilderColumns(dataset);
     const isDimensionMetric = countableColumns.includes(metric);
+
+    // "by" offers the useful splits first, each with how many groups it makes,
+    // then time (when the data has dates), then columns with very many values
+    // (IDs, free text) that rarely make a readable chart.
+    const groupCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        const rows = dataset.rows.slice(0, 20000);
+        for (const column of dims) {
+            const seen = new Set<string>();
+            for (const row of rows) {
+                const value = row[column];
+                if (value === null || value === undefined || value === '') continue;
+                seen.add(String(value));
+                if (seen.size > 1000) break;
+            }
+            counts[column] = seen.size;
+        }
+        return counts;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dataset.rows, dims.join('|')]);
+    const ID_TYPES = new Set(dataset.columns.filter(column => column.type === ColumnType.ID).map(column => column.name));
+    const manyValues = (column: string) => ID_TYPES.has(column) || (groupCounts[column] ?? 0) > 60;
+    const groupsHint = (column: string) => {
+        const n = groupCounts[column] ?? 0;
+        return n > 1000 ? '1,000+ groups' : `${n.toLocaleString('en-GB')} group${n === 1 ? '' : 's'}`;
+    };
+    const splitOptions: SelectOption[] = [
+        { label: 'Nothing (one total)', value: '' },
+        ...dims.filter(d => !manyValues(d)).map(d => ({ label: columnLabel(d), value: d, group: 'Split by', hint: groupsHint(d) })),
+        ...(!gafsOnly && dateColumns.length
+            ? (['day', 'week', 'month', 'quarter', 'year'] as const).map(grain => ({ label: `By ${grain}`, value: `time:${grain}`, group: 'Over time' }))
+            : []),
+        ...dims.filter(d => manyValues(d)).map(d => ({ label: columnLabel(d), value: d, group: 'Many different values', hint: groupsHint(d) })),
+    ];
     const allMetricAggregationOptions = [
         { label: 'Total', value: 'SUM' },
         { label: 'Average', value: 'AVG' },
@@ -859,7 +893,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     {/* Aggregation Selector */}
                     <div className="qi-builder-aggregation flex flex-col gap-0.5">
-                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Aggregation</span>
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">How</span>
                         <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
                             <QuerySelect
                                 menuPlacement="auto"
@@ -876,7 +910,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     {/* Metric Selector */}
 <div className="qi-builder-metric flex flex-col gap-0.5">
-                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Of</span>
                         <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
                             <QuerySelect
                                 menuPlacement="auto"
@@ -963,21 +997,27 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     {/* Dimension Selector (columns only) */}
                     <div className="qi-builder-dimension flex flex-col gap-0.5">
-                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-blue-400/70 pl-1">Dimension</span>
-                        <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-blue-400/70 pl-1">Split by</span>
+                        <Tooltip text="Split the answer by a column (product, region…) or over time (by month, by week…)." position="bottom">
                             <QuerySelect
                                 menuPlacement="auto"
-                                value={dimension}
-                                onChange={newDim => {
-                                    setDimension(newDim);
-                                    if (newDim && !timeGrain) setSort('desc');
+                                value={!gafsOnly && timeGrain && !dimension ? `time:${timeGrain}` : dimension}
+                                onChange={choice => {
+                                    // Over time is the same setting as the Time tab's "group by time".
+                                    if (choice.startsWith('time:')) {
+                                        setTimeGrain(choice.slice(5));
+                                        setDimension('');
+                                        setSort('oldest');
+                                        setLimit(0);
+                                    } else {
+                                        setDimension(choice);
+                                        if (choice) setTimeGrain('');
+                                        if (choice) setSort('desc');
+                                    }
                                     // Remove any existing auto-filter for the old dimension
                                     setFilters(prev => prev.filter(f => !(f.type === 'dimension' && f._autoDim)));
                                 }}
-                                options={[
-                                    { label: 'Nothing (one total)', value: '' },
-                                    ...dims.map(d => ({ label: columnLabel(d), value: d, group: 'Split by' }))
-                                ]}
+                                options={splitOptions}
                                 icon={<MapPin className="w-3.5 h-3.5" />}
                                 colorTextClass="text-blue-400"
                                 colorRingClass="focus:ring-blue-500/30"
@@ -1158,10 +1198,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     </>)}
 
                     {activeBuilderTab === 'compare' && (
-                        <div className="flex w-full flex-wrap items-end gap-4 rounded-xl border border-amber-400/15 bg-amber-400/5 p-4">
-                            <div className="mr-auto max-w-[300px]">
-                                <div className="text-sm font-black text-white">Period comparison</div>
-                                <div className="mt-1 text-[11px] leading-4 text-slate-400">Compare the current filtered period with its immediately preceding period or the same period farther back.</div>
+                        <div className="qi-builder-wide flex w-full flex-wrap items-end gap-4 rounded-xl border border-amber-400/15 bg-amber-400/5 p-4">
+                            <div className="mr-auto max-w-[320px]">
+                                <div className="text-sm font-black text-white">Compare with an earlier period</div>
+                                <div className="mt-1 text-[11px] leading-4 text-slate-400">See the period you picked next to the one before it, or the same period a year or more back.</div>
+                                {timeFilter === 'all_time' && (
+                                    <div className="qi-builder-needs mt-2 text-[11px] font-semibold leading-4">Pick a time range on the Time tab first (for example This month): there is no period to compare yet.</div>
+                                )}
                             </div>
                             <div className="flex flex-col gap-1">
                                 <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Comparison</span>
@@ -1170,9 +1213,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     value={comparison}
                                     onChange={setComparison}
                                     options={[
-                                        { label: 'No Comparison', value: '' },
-                                        { label: 'vs Previous Period', value: 'previous_period' },
-                                        { label: 'vs Same Period Last N', value: 'same_period_last_n' },
+                                        { label: 'No comparison', value: '' },
+                                        { label: 'With the period before', value: 'previous_period' },
+                                        { label: 'With the same period earlier', value: 'same_period_last_n' },
                                     ]}
                                     colorTextClass="text-yellow-400"
                                     colorRingClass="focus:ring-yellow-500/30"
@@ -1209,11 +1252,14 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     )}
 
                     {activeBuilderTab === 'calculations' && (
-                        <div className="w-full rounded-xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+                        <div className="qi-builder-wide w-full rounded-xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
                             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                                 <div>
-                                    <div className="text-sm font-black text-white">Table calculations</div>
-                                    <div className="mt-1 text-[11px] text-slate-400">Apply calculations to the aggregated result without rebuilding the core question.</div>
+                                    <div className="text-sm font-black text-white">Add a calculation</div>
+                                    <div className="mt-1 text-[11px] text-slate-400">Worked out from the answer on screen, such as each group's share of the total.</div>
+                                    {!dimension && !timeGrain && (
+                                        <div className="qi-builder-needs mt-2 text-[11px] font-semibold leading-4">Split the answer first (by a column or by month): one total has nothing to compare.</div>
+                                    )}
                                 </div>
                                 {tableCalculations.length > 0 && (
                                     <button type="button" onClick={() => onTableCalculationsChange?.([])} className="text-[11px] font-bold text-slate-400 hover:text-red-300">Clear all</button>
@@ -1231,14 +1277,20 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     ['percentile', 'Percentile'],
                                 ] as Array<[TableCalculation, string]>).map(([calculation, label]) => {
                                     const selected = tableCalculations.includes(calculation);
+                                    // A change from one row to the next, or a moving average, needs rows in time order.
+                                    const needsTime = ['moving_avg', 'pct_diff_from_prev', 'diff_from_prev'].includes(calculation);
+                                    const reason = !dimension && !timeGrain ? 'Split the answer first'
+                                        : needsTime && !timeGrain ? 'Needs a split over time (By month, By week…)' : '';
                                     return (
                                         <button
                                             key={calculation}
                                             type="button"
+                                            disabled={Boolean(reason) && !selected}
+                                            title={reason || undefined}
                                             onClick={() => onTableCalculationsChange?.(selected
                                                 ? tableCalculations.filter(item => item !== calculation)
                                                 : [...tableCalculations, calculation])}
-                                            className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all ${selected
+                                            className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-45 ${selected
                                                 ? 'border-fuchsia-300/40 bg-fuchsia-400/20 text-fuchsia-100'
                                                 : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`}
                                         >

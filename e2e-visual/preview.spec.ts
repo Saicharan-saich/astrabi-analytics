@@ -126,7 +126,7 @@ for (const theme of ['light', 'dark'] as const) {
         };
         for (const [field, file] of [['city', '28-format-city'], ['product', '29-format-product']] as const) {
             await dimension.click(quick).catch(() => {});
-            await page.getByRole('option', { name: field, exact: true }).click(quick).catch(() => {});
+            await page.getByRole('option', { name: new RegExp(`^${field}$`, 'i') }).first().click(quick).catch(() => {});
             await page.waitForTimeout(2500);
             await chooseChart('Vertical Bar');
             await stage.screenshot({ path: path.join(OUT, `${file}-${theme}.png`), ...quick }).catch(() => {});
@@ -328,7 +328,7 @@ for (const theme of ['light', 'dark'] as const) {
             if (await dimension.isVisible().catch(() => false)) {
                 await dimension.click();
                 await shoot(page, `21-builder-dropdown-${theme}`);
-                await page.getByRole('option', { name: 'category', exact: true }).click().catch(() => {});
+                await page.getByRole('option', { name: 'Category', exact: true }).click().catch(() => {});
                 await page.waitForTimeout(2500);
                 await shoot(page, `22-builder-result-${theme}`);
                 // Every "Views" chip, so each suggested chart is checked.
@@ -346,7 +346,7 @@ for (const theme of ['light', 'dark'] as const) {
                 }
                 // Click to explore: menu → break down → trail → rows.
                 await dimension.click().catch(() => {});
-                await page.getByRole('option', { name: 'category', exact: true }).click().catch(() => {});
+                await page.getByRole('option', { name: 'Category', exact: true }).click().catch(() => {});
                 await page.waitForTimeout(2500);
                 if (await openExploreMenu(page, page.locator('.qi-visual-stage canvas').first())) {
                     await page.waitForTimeout(300);

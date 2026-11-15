@@ -91,7 +91,24 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(page.locator('.qi-filter-menu')).toContainText('A category');
         await expect(page.locator('.qi-filter-menu')).toContainText('An amount');
         await shoot(page, `80-builder-filter-menu-${theme}`);
-        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: /Add filter|Filters/i }).first().click();
+
+        // "by" lists useful splits with their group counts, then time.
+        await splitBy.click();
+        await expect(page.getByRole('option', { name: 'By month', exact: true })).toBeVisible();
+        await expect(page.locator('.qi-dropdown-hint').first()).toContainText(/group/);
+        await shoot(page, `81-builder-split-menu-${theme}`);
+        await splitBy.click();
+
+        // Compare and Calc use the whole panel and say what they need.
+        await page.getByRole('button', { name: 'Calc', exact: true }).first().click();
+        await expect(page.locator('.qi-builder-wide:visible')).toContainText('Add a calculation');
+        const calcWidth = await page.locator('.qi-builder-wide:visible').first().evaluate(el => el.getBoundingClientRect().width);
+        expect(calcWidth).toBeGreaterThan(200);
+        await shoot(page, `82-builder-calc-${theme}`);
+        await page.getByRole('button', { name: 'Compare', exact: true }).first().click();
+        await expect(page.locator('.qi-builder-wide:visible')).toContainText('Compare with an earlier period');
+        await shoot(page, `83-builder-compare-${theme}`);
     });
 }
 

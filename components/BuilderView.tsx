@@ -340,15 +340,16 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (maxForCol && !isUserOverride) setAsOfDate(maxForCol);
     };
 
-    const handleRun = async (config: any, options: { recordHistory?: boolean } = {}) => {
+    const handleRun = async (config: any, options: { recordHistory?: boolean; startingPoint?: boolean } = {}) => {
         const nextRequestedConfig = JSON.parse(JSON.stringify(config));
         const previousRequestedConfig = requestedConfigRef.current;
-        if (options.recordHistory !== false && previousRequestedConfig
+        if (options.recordHistory !== false && !options.startingPoint && previousRequestedConfig
             && JSON.stringify(previousRequestedConfig) !== JSON.stringify(nextRequestedConfig)) {
             undoHistoryRef.current = [...undoHistoryRef.current, previousRequestedConfig].slice(-30);
             setUndoDepth(undoHistoryRef.current.length);
         }
-        requestedConfigRef.current = nextRequestedConfig;
+        // The answer the builder opens on is not a step the user took, so it is not undone to.
+        if (!options.startingPoint) requestedConfigRef.current = nextRequestedConfig;
 
         const runSequence = ++runSequenceRef.current;
         try {
@@ -537,12 +538,12 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         try { return builderStarters(dataset); } catch { return []; }
     }, [dataset]);
 
-    const runStarter = (config: Record<string, unknown>) => {
+    const runStarter = (config: Record<string, unknown>, options: { recordHistory?: boolean; startingPoint?: boolean } = {}) => {
         const next = { ...config };
         setUndoRestoreConfig(next);
         setBuilderResetVersion(version => version + 1);
         setContentTab('visual');
-        void handleRun(next);
+        void handleRun(next, options);
     };
 
     // Open on an answer, not an empty page: the first starting point runs by
@@ -553,7 +554,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (result || error || isLoading || savedSession?.config || !starters.length || !dataset.rows.length) return;
         if (autoStartedFor.current === dataset.id) return;
         autoStartedFor.current = dataset.id;
-        runStarter(starters[0].config);
+        // Not an undoable step: the user hasn't changed anything yet.
+        runStarter(starters[0].config, { startingPoint: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [result, error, isLoading, savedSession, starters, dataset.id, dataset.rows.length]);
 
