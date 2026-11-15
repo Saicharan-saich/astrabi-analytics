@@ -70,15 +70,28 @@ for (const theme of ['light', 'dark'] as const) {
         await higher.scrollIntoViewIfNeeded();
         await shoot(page, `65-column-meaning-${theme}`);
 
-        // ── an empty Question Builder explains itself ──
+        // ── the Question Builder opens on an answer, with other starting points ──
         await go(page, 'Question Builder');
-        const start = page.locator('.qi-builder-start:visible');
-        await expect(start).toContainText('Build a chart in three clicks');
-        await expect(start.getByRole('button', { name: 'Revenue month by month' })).toBeVisible();
-        await shoot(page, `63-builder-start-${theme}`);
-        await start.getByRole('button', { name: 'Revenue by product' }).click();
         await expect(page.locator('.qi-builder-headline-title:visible')).toBeVisible({ timeout: 20000 });
+        const picks = page.locator('.qi-builder-starters:visible');
+        await expect(picks.getByRole('button', { name: 'Revenue by product' })).toBeVisible();
+        await expect(picks.getByRole('button', { name: 'Revenue month by month' })).toHaveCount(0); // the one on screen
+        await shoot(page, `63-builder-start-${theme}`);
+        await picks.getByRole('button', { name: 'Revenue by product' }).click();
+        await expect(page.locator('.qi-builder-headline-title:visible')).toContainText(/product/i, { timeout: 20000 });
+        await expect(page.locator('.qi-builder-starters:visible').getByRole('button', { name: 'Revenue month by month' })).toBeVisible();
         await shoot(page, `64-builder-starter-result-${theme}`);
+
+        // Plain words in the menus: readable column names, no symbols.
+        const splitBy = page.locator('.qi-builder-dimension button[aria-haspopup="listbox"]:visible').first();
+        await splitBy.click();
+        await expect(page.getByRole('option', { name: 'Nothing (one total)' })).toBeVisible();
+        await splitBy.click();
+        await page.getByRole('button', { name: /Add filter|Filters/i }).first().click();
+        await expect(page.locator('.qi-filter-menu')).toContainText('A category');
+        await expect(page.locator('.qi-filter-menu')).toContainText('An amount');
+        await shoot(page, `80-builder-filter-menu-${theme}`);
+        await page.keyboard.press('Escape');
     });
 }
 

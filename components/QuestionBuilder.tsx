@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { columnLabel } from '../utils/columnLabel';
 import ReactDOM from 'react-dom';
-import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock, Check, Search, Calculator, GitCompareArrows, Blocks } from 'lucide-react';
+import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock, Check, Search, Calculator, GitCompareArrows, Blocks, Tag, CalendarDays } from 'lucide-react';
 import { Dataset } from '../types';
 import type { TableCalculation } from '../utils/tableCalculations';
 import { FilterItem } from './FilterItem';
@@ -244,7 +245,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             const viewportPadding = 8;
             const gap = 8;
             const desiredHeight = 520;
-            const panelWidth = Math.min(360, window.innerWidth - viewportPadding * 2);
+            const panelWidth = Math.min(420, window.innerWidth - viewportPadding * 2);
             const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
             const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
             const placement: 'up' | 'down' =
@@ -453,13 +454,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const { metrics, dimensions: dims, countable: countableColumns, dates: dateColumns } = questionBuilderColumns(dataset);
     const isDimensionMetric = countableColumns.includes(metric);
     const allMetricAggregationOptions = [
-        { label: 'Total  (Σ)', value: 'SUM' },
-        { label: 'Average  (μ)', value: 'AVG' },
-        { label: 'Highest  (↑)', value: 'MAX' },
-        { label: 'Lowest  (↓)', value: 'MIN' },
-        { label: 'Count  (#)', value: 'COUNT' },
-        { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
-        { label: 'Raw Values', value: 'NONE' },
+        { label: 'Total', value: 'SUM' },
+        { label: 'Average', value: 'AVG' },
+        { label: 'Highest', value: 'MAX' },
+        { label: 'Lowest', value: 'MIN' },
+        { label: 'Count', value: 'COUNT' },
+        { label: 'Number of different', value: 'COUNT_DISTINCT' },
+        { label: 'Each row (not added up)', value: 'NONE' },
     ];
     // Any number can be totalled, averaged, etc. — the user decides. Only text
     // and ID columns are limited to counting, because there is nothing to add.
@@ -890,8 +891,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     }
                                 }}
                                 options={[
-                                    ...metrics.map(m => ({ label: m.replace(/_/g, ' '), value: m, group: 'Measures' })),
-                                    ...countableColumns.map(c => ({ label: c.replace(/_/g, ' '), value: c, group: 'Countable Dimensions' }))
+                                    ...metrics.map(m => ({ label: columnLabel(m), value: m, group: 'Numbers' })),
+                                    ...countableColumns.map(c => ({ label: columnLabel(c), value: c, group: 'Count of' }))
                                 ]}
                                 icon={<TrendingUp className="w-3.5 h-3.5" />}
                                 colorTextClass="text-purple-400"
@@ -905,7 +906,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     {!gafsOnly && secondaryMetrics.map(sm => (
                         <span key={sm} className="inline-flex items-center gap-1.5 bg-teal-500/20 text-teal-300 font-bold text-xs border border-teal-400/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:scale-[1.02] transition-all relative overflow-visible">
                             <span className="text-teal-500 font-normal text-xs">+</span>
-                            <span>{sm.replace(/_/g, ' ')}</span>
+                            <span>{columnLabel(sm)}</span>
                             <span className="text-teal-400/40 mx-0.5">│</span>
                             <QuerySelect
                                 menuPlacement="auto"
@@ -935,8 +936,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 className="!py-1 !pl-2 !pr-1.5 !bg-teal-500/20 !border-teal-400/30"
                             />
                             <button type="button" onClick={() => removeSecondaryMetric(sm)}
-                                aria-label={`Remove additional metric ${sm.replace(/_/g, ' ')}`}
-                                title={`Remove additional metric ${sm.replace(/_/g, ' ')}`}
+                                aria-label={`Remove additional metric ${columnLabel(sm)}`}
+                                title={`Remove additional metric ${columnLabel(sm)}`}
                                 className="text-teal-400 hover:text-red-500 transition-colors ml-0.5">
                                 <X className="w-3.5 h-3.5" />
                             </button>
@@ -948,10 +949,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     {!gafsOnly && secondaryDimensions.map(sd => (
                         <span key={sd} className="inline-flex items-center gap-1 bg-violet-500/20 text-violet-300 font-bold text-xs border border-violet-400/30 rounded-lg px-2 py-1 shadow-sm hover:scale-[1.02] transition-all">
                             <Layers className="w-3 h-3 text-violet-400" />
-                            <span>{sd.replace(/_/g, ' ')}</span>
+                            <span>{columnLabel(sd)}</span>
                             <button type="button" onClick={() => removeSecondaryDimension(sd)}
-                                aria-label={`Remove additional dimension ${sd.replace(/_/g, ' ')}`}
-                                title={`Remove additional dimension ${sd.replace(/_/g, ' ')}`}
+                                aria-label={`Remove additional dimension ${columnLabel(sd)}`}
+                                title={`Remove additional dimension ${columnLabel(sd)}`}
                                 className="text-violet-400 hover:text-red-500 transition-colors ml-0.5">
                                 <X className="w-3.5 h-3.5" />
                             </button>
@@ -974,8 +975,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     setFilters(prev => prev.filter(f => !(f.type === 'dimension' && f._autoDim)));
                                 }}
                                 options={[
-                                    { label: '(None)', value: '' },
-                                    ...dims.map(d => ({ label: d.replace(/_/g, ' '), value: d, group: 'Dimensions' }))
+                                    { label: 'Nothing (one total)', value: '' },
+                                    ...dims.map(d => ({ label: columnLabel(d), value: d, group: 'Split by' }))
                                 ]}
                                 icon={<MapPin className="w-3.5 h-3.5" />}
                                 colorTextClass="text-blue-400"
@@ -1300,35 +1301,30 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     style={{
                                         top: filterMenuPos.top,
                                         left: filterMenuPos.left,
-                                        width: 240,
+                                        width: 260,
                                         backgroundColor: '#0f172a',
                                         transform: filterMenuPos.placement === 'up' ? 'translateY(-100%)' : 'none',
                                         transformOrigin: filterMenuPos.placement === 'up' ? 'bottom right' : 'top right'
                                     }}
                                 >
-                                    <button
-                                        onClick={() => { addFilter('dimension'); setShowFilterMenu(false); }}
-                                        className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-purple-500/20 hover:text-purple-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
-                                    >
-                                        <span className="text-base">🏷️</span> By Dimension
-                                        <span className="text-[11px] text-slate-500 ml-auto">category, region...</span>
-                                    </button>
-                                    <button
-                                        onClick={() => { addFilter('measure'); setShowFilterMenu(false); }}
-                                        className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-blue-500/20 hover:text-blue-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
-                                    >
-                                        <span className="text-base">📊</span> By Metric Value
-                                        <span className="text-[11px] text-slate-500 ml-auto">sales &gt; 1000...</span>
-                                    </button>
-                                    {!gafsOnly && dateColumns.length > 0 && (
+                                    {[
+                                        { type: 'dimension' as const, title: 'A category', example: dims.length ? `e.g. ${dims.slice(0, 2).map(columnLabel).join(', ')}` : 'e.g. product, region', show: true },
+                                        { type: 'measure' as const, title: 'An amount', example: metrics.length ? `e.g. ${columnLabel(metrics[0])} over 1,000` : 'e.g. sales over 1,000', show: true },
+                                        { type: 'date' as const, title: 'A date', example: 'a year, quarter or month', show: !gafsOnly && dateColumns.length > 0 },
+                                    ].filter(item => item.show).map(item => (
                                         <button
-                                            onClick={() => { addFilter('date'); setShowFilterMenu(false); }}
-                                            className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-teal-500/20 hover:text-teal-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
+                                            key={item.type}
+                                            type="button"
+                                            onClick={() => { addFilter(item.type); setShowFilterMenu(false); }}
+                                            className="qi-filter-choice w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white flex items-start gap-2.5 transition-colors rounded-lg"
                                         >
-                                            <span className="text-base">📅</span> By Date
-                                            <span className="text-[11px] text-slate-500 ml-auto">year, quarter...</span>
+                                            {item.type === 'dimension' ? <Tag className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> : item.type === 'measure' ? <Hash className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> : <CalendarDays className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
+                                            <span className="min-w-0">
+                                                <span className="block font-semibold">{item.title}</span>
+                                                <span className="block text-[11px] text-slate-500 truncate">{item.example}</span>
+                                            </span>
                                         </button>
-                                    )}
+                                    ))}
                                 </div>,
                                 document.body
                             )}
@@ -1345,7 +1341,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     style={{
                         top: optionsPos.top,
                         left: optionsPos.left,
-                        width: 'min(360px, calc(100vw - 16px))',
+                        width: 'min(420px, calc(100vw - 16px))',
                         maxHeight: optionsPos.maxHeight,
                         overflowY: 'auto',
                         transform: optionsPos.placement === 'up' ? 'translateY(-100%)' : 'none',
@@ -1355,19 +1351,19 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     {/* METRIC */}
                     {!gafsOnly && metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).length > 0 && (
                         <div className="flex items-center gap-2">
-                            <span className="text-xs text-purple-400 uppercase tracking-wider font-bold">Metric</span>
+                            <span className="text-xs text-purple-400 uppercase tracking-wider font-bold">Also show</span>
                             <QuerySelect
                                 menuPlacement="auto"
                                 value=""
                                 onChange={val => { if (val) setSecondaryMetrics(prev => [...prev, val]); }}
                                 options={[
-                                    { label: '+ Add Metric', value: '' },
-                                    ...metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).map(m => ({ label: m.replace(/_/g, ' '), value: m }))
+                                    { label: 'Another number', value: '' },
+                                    ...metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).map(m => ({ label: columnLabel(m), value: m }))
                                 ]}
                                 icon={<span className="text-xl leading-none -mt-1 font-normal">+</span>}
                                 colorTextClass="text-purple-400"
                                 colorRingClass="focus:ring-purple-500/30"
-                                placeholder="+ Add Metric"
+                                placeholder="Another number"
                             />
                         </div>
                     )}
@@ -1375,19 +1371,19 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     {/* DIMENSION */}
                     {!gafsOnly && dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).length > 0 && (
                         <div className="flex items-center gap-2">
-                            <span className="text-xs text-blue-400 uppercase tracking-wider font-bold">Dimension</span>
+                            <span className="text-xs text-blue-400 uppercase tracking-wider font-bold">Then split by</span>
                             <QuerySelect
                                 menuPlacement="auto"
                                 value=""
                                 onChange={val => { if (val) setSecondaryDimensions(prev => [...prev, val]); }}
                                 options={[
-                                    { label: '+ Add Dimension', value: '' },
-                                    ...dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).map(d => ({ label: d.replace(/_/g, ' '), value: d }))
+                                    { label: 'Pick a column', value: '' },
+                                    ...dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).map(d => ({ label: columnLabel(d), value: d }))
                                 ]}
                                 icon={<span className="text-xl leading-none -mt-1 font-normal">+</span>}
                                 colorTextClass="text-blue-400"
                                 colorRingClass="focus:ring-blue-500/30"
-                                placeholder="+ Add Dimension"
+                                placeholder="Pick a column"
                             />
                         </div>
                     )}
@@ -1401,10 +1397,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                         key={`metric-${field}`}
                                         type="button"
                                         onClick={() => removeSecondaryMetric(field)}
-                                        aria-label={`Remove additional metric ${field.replace(/_/g, ' ')}`}
+                                        aria-label={`Remove additional metric ${columnLabel(field)}`}
                                         className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-teal-400/30 bg-teal-500/10 px-2.5 py-1.5 text-xs font-semibold text-teal-200 transition-colors hover:border-red-400/50 hover:bg-red-500/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
                                     >
-                                        <span>Metric: {field.replace(/_/g, ' ')}</span><X className="h-3.5 w-3.5" aria-hidden="true" />
+                                        <span>Also: {columnLabel(field)}</span><X className="h-3.5 w-3.5" aria-hidden="true" />
                                     </button>
                                 ))}
                                 {secondaryDimensions.map(field => (
@@ -1412,10 +1408,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                         key={`dimension-${field}`}
                                         type="button"
                                         onClick={() => removeSecondaryDimension(field)}
-                                        aria-label={`Remove additional dimension ${field.replace(/_/g, ' ')}`}
+                                        aria-label={`Remove additional dimension ${columnLabel(field)}`}
                                         className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-violet-400/30 bg-violet-500/10 px-2.5 py-1.5 text-xs font-semibold text-violet-200 transition-colors hover:border-red-400/50 hover:bg-red-500/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
                                     >
-                                        <span>Dimension: {field.replace(/_/g, ' ')}</span><X className="h-3.5 w-3.5" aria-hidden="true" />
+                                        <span>Then by: {columnLabel(field)}</span><X className="h-3.5 w-3.5" aria-hidden="true" />
                                     </button>
                                 ))}
                             </div>
@@ -1425,7 +1421,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     {/* LIMIT — Top / Bottom */}
                     {!isTimeDimension && (
                         <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Limit</span>
+                            <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Show</span>
                             <QuerySelect
                                 menuPlacement="auto"
                                 value={(() => {
@@ -1449,16 +1445,16 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     }
                                 }}
                                 options={[
-                                    { label: 'Show All', value: '0' },
-                                    { label: '\u2B06 Top 5', value: '5' },
-                                    { label: '\u2B06 Top 10', value: '10' },
-                                    { label: '\u2B06 Top 20', value: '20' },
-                                    { label: '\u2B06 Top 50', value: '50' },
-                                    { label: '\u2B07 Bottom 5', value: '-5' },
-                                    { label: '\u2B07 Bottom 10', value: '-10' },
-                                    { label: '\u2B07 Bottom 20', value: '-20' },
-                                    { label: '\u2B07 Bottom 50', value: '-50' },
-                                    { label: 'Custom...', value: 'custom' }
+                                    { label: 'All', value: '0' },
+                                    { label: 'Top 5', value: '5' },
+                                    { label: 'Top 10', value: '10' },
+                                    { label: 'Top 20', value: '20' },
+                                    { label: 'Top 50', value: '50' },
+                                    { label: 'Bottom 5', value: '-5' },
+                                    { label: 'Bottom 10', value: '-10' },
+                                    { label: 'Bottom 20', value: '-20' },
+                                    { label: 'Bottom 50', value: '-50' },
+                                    { label: 'Another number…', value: 'custom' }
                                 ]}
                                 colorRingClass="focus:ring-white/20"
                                 searchable={false}
@@ -1497,16 +1493,16 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     {/* SORT */}
                     {!isTimeDimension && (
                         <div className="flex items-center gap-2">
-                            <span className="text-xs text-amber-400 uppercase tracking-wider font-bold">Sort</span>
+                            <span className="text-xs text-amber-400 uppercase tracking-wider font-bold">Order</span>
                             <QuerySelect
                                 menuPlacement="auto"
                                 value={sort}
                                 onChange={val => setSort(val as 'asc' | 'desc' | 'oldest' | 'newest')}
                                 options={[
-                                    { label: 'High to Low', value: 'desc' },
-                                    { label: 'Low to High', value: 'asc' },
-                                    { label: 'Oldest First', value: 'oldest' },
-                                    { label: 'Newest First', value: 'newest' }
+                                    { label: 'Highest first', value: 'desc' },
+                                    { label: 'Lowest first', value: 'asc' },
+                                    { label: 'Oldest first', value: 'oldest' },
+                                    { label: 'Newest first', value: 'newest' }
                                 ]}
                                 colorTextClass="text-amber-400"
                                 colorRingClass="focus:ring-amber-500/30"

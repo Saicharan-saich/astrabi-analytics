@@ -33,6 +33,8 @@ interface TransparencyPanelProps {
     className?: string;
     /** Start expanded (default: collapsed). */
     defaultOpen?: boolean;
+    /** Show the confidence badge. Off where the answer is exact (Question Builder). */
+    showConfidence?: boolean;
 }
 
 /** Human-readable filter descriptions derived from the query config. */
@@ -90,6 +92,7 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
     datasetName,
     className = '',
     defaultOpen = false,
+    showConfidence = true,
 }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
@@ -101,7 +104,7 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
     const exp = result.explainability;
     const filters = useMemo(() => deriveFilters(result), [result]);
     const warnings = Array.isArray(result.warnings) ? result.warnings.filter(Boolean) : [];
-    const hasConfidence = typeof result.confidence === 'number' && !isNaN(result.confidence);
+    const hasConfidence = showConfidence && typeof result.confidence === 'number' && !isNaN(result.confidence);
 
     const aggregation = exp?.aggregation || result.config?.aggregation;
     const sourceColumn = exp?.sourceColumn || result.config?.metric;

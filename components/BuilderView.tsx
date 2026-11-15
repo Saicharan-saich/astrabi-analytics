@@ -545,6 +545,21 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         void handleRun(next);
     };
 
+    // Open on an answer, not an empty page: the first starting point runs by
+    // itself when there is no earlier session to restore. Once per dataset, so
+    // a deliberate reset stays empty.
+    const autoStartedFor = useRef<string | null>(null);
+    useEffect(() => {
+        if (result || error || isLoading || savedSession?.config || !starters.length || !dataset.rows.length) return;
+        if (autoStartedFor.current === dataset.id) return;
+        autoStartedFor.current = dataset.id;
+        runStarter(starters[0].config);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [result, error, isLoading, savedSession, starters, dataset.id, dataset.rows.length]);
+
+    /** The starting point the answer on screen came from, if any. */
+    const currentStarter = lastRunConfig ? starters.find(starter => configSignature(starter.config) === configSignature(lastRunConfig)) : undefined;
+
     const goToTrailLevel = (index: number) => {
         if (!drillTrail) return;
         const level = drillTrail.levels[index];
@@ -1140,6 +1155,14 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                 {result && !error && !isLoading && (
                     <>
+                        {currentStarter && starters.length > 1 && (
+                            <nav className="qi-builder-starters" aria-label="Other starting points">
+                                <span>Or try</span>
+                                {starters.filter(starter => starter !== currentStarter).map(starter => (
+                                    <button key={starter.label} type="button" onClick={() => runStarter(starter.config)}>{starter.label}</button>
+                                ))}
+                            </nav>
+                        )}
                         <section className="qi-builder-answer qi-builder-headline mb-2 shrink-0" aria-label="Your answer in words" aria-live="polite">
                             <h2 className="qi-builder-headline-title">{headlineQuestion(describeBuilderQuestion({ ...(lastRunConfig || result.config), aggregation: result.config?.aggregation || lastRunConfig?.aggregation }))}</h2>
                             {result.notices?.map(notice => (
@@ -1450,7 +1473,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     </div>
                                 )}
                             </div>
-                            <TransparencyPanel result={result} datasetName={dataset.name} />
+                            {/* The builder's answer is exact and checked, so no confidence score. */}
+                            <TransparencyPanel result={result} datasetName={dataset.name} showConfidence={false} />
                           </>
                         )}
 
