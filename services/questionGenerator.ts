@@ -385,13 +385,49 @@ function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
 const questionCache = new Map<string, QuestionSet>();
 
 /**
+ * AI-written questions are kept in this browser (per dataset version and
+ * column set) so they are not asked for again on every visit or sign-in.
+ * Cleared at sign-out. Only questions are stored, never data.
+ */
+export const SMART_QUESTIONS_STORE = 'QuickInsight-smart-questions-v1';
+const STORE_DAYS = 30;
+const STORE_MAX = 20;
+
+function storeKey(dataset: Dataset): string {
+    const columns = dataset.columns.map(column => `${column.name}:${column.type}`).join('|');
+    let hash = 0;
+    for (let i = 0; i < columns.length; i++) hash = (hash * 31 + columns.charCodeAt(i)) | 0;
+    return `${dataset.id}_${dataset.version || 0}_${(hash >>> 0).toString(36)}`;
+}
+
+function readStore(): Record<string, QuestionSet> {
+    try { return JSON.parse(localStorage.getItem(SMART_QUESTIONS_STORE) || '{}') || {}; } catch { return {}; }
+}
+
+function remembered(key: string): QuestionSet | null {
+    const entry = readStore()[key];
+    return entry && entry.source === 'ai' && Date.now() - entry.generatedAt < STORE_DAYS * 86_400_000 ? entry : null;
+}
+
+function remember(key: string, set: QuestionSet): void {
+    if (set.source !== 'ai') return; // fallback questions are cheap to rebuild and an AI answer may come next time
+    try {
+        const store = readStore();
+        store[key] = set;
+        const keys = Object.keys(store).sort((a, b) => store[b].generatedAt - store[a].generatedAt);
+        for (const old of keys.slice(STORE_MAX)) delete store[old];
+        localStorage.setItem(SMART_QUESTIONS_STORE, JSON.stringify(store));
+    } catch { /* storage full or unavailable: memory cache still applies */ }
+}
+
+/**
  * Generate smart questions for a dataset using AI.
  * Returns cached results if available for the same dataset version.
  */
 export async function generateQuestions(dataset: Dataset): Promise<QuestionSet> {
-    const cacheKey = `${dataset.id}_${dataset.version || 0}`;
-    const cached = questionCache.get(cacheKey);
-    if (cached) return cached;
+    const cacheKey = storeKey(dataset);
+    const cached = questionCache.get(cacheKey) ?? remembered(cacheKey);
+    if (cached) { questionCache.set(cacheKey, cached); return cached; }
 
     // Try AI-powered generation first
     console.log('[SmartQ] Generating AI-powered questions for', dataset.name);
@@ -432,9 +468,16 @@ export async function generateQuestions(dataset: Dataset): Promise<QuestionSet> 
     };
 
     questionCache.set(cacheKey, result);
+    remember(cacheKey, result);
     return result;
+}
+
+/** What a page reload does: forget the in-memory copy (the browser copy stays). */
+export function forgetQuestionsInMemory(): void {
+    questionCache.clear();
 }
 
 export function clearQuestionCache(): void {
     questionCache.clear();
+    try { localStorage.removeItem(SMART_QUESTIONS_STORE); } catch { /* unavailable */ }
 }

@@ -24,9 +24,44 @@
     }
   },
   "models": {
-    "anthropic/claude-opus-5.5": { "label": "Claude Opus 5.5", "temperature": false, "reasoning": "required", "images": false },
-    "anthropic/claude-sonnet-5.5": { "label": "Claude Sonnet 5.5", "temperature": false, "reasoning": "required", "images": false },
-    "anthropic/claude-haiku-5.5": { "label": "Claude Haiku 5.5", "temperature": false, "reasoning": "optional", "images": true }
+    "anthropic/claude-opus-5.5": {
+      "label": "Claude Opus 5.5",
+      "temperature": false,
+      "reasoning": "required",
+      "images": false,
+      "cache": true
+    },
+    "anthropic/claude-sonnet-5.5": {
+      "label": "Claude Sonnet 5.5",
+      "temperature": false,
+      "reasoning": "required",
+      "images": false,
+      "cache": true
+    },
+    "anthropic/claude-haiku-5.5": {
+      "label": "Claude Haiku 5.5",
+      "temperature": false,
+      "reasoning": "optional",
+      "images": true,
+      "cache": true
+    }
   },
-  "thinkingTokens": { "low": 4000, "medium": 12000, "high": 24000 }
+  "thinkingTokens": {
+    "low": 4000,
+    "medium": 12000,
+    "high": 24000
+  },
+  "caching": {
+    "_note": "Prompt caching for models with \"cache\": true. The fixed instructions (system message) are cached for an hour, shared by everyone. In a question, the part before the first heading below (the description of the user's columns) is cached for 5 minutes, so follow-ups and re-asks read it at a tenth of the price. A cached read costs 0.1x input; writing costs 1.25x (5 minutes) or 2x (1 hour).",
+    "systemTtl": "1h",
+    "dataTtl": "5m",
+    "splitBefore": [
+      "EARLIER IN THIS CHAT",
+      "QUESTION",
+      "NEW MESSAGE",
+      "RECENT CONVERSATION",
+      "LAST ANSWER'S SQL",
+      "FAILED SQL"
+    ]
+  }
 }

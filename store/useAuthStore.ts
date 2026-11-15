@@ -248,7 +248,7 @@ export const useAuthStore = create<AuthState>()(
                 clearSharedAppData();
                 localStorage.removeItem('qi_token');
                 // What the AI found online about column names lasts for the session only.
-                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); } catch {}
+                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); localStorage.removeItem('QuickInsight-smart-questions-v1'); } catch {}
                 void import('../services/columnDictionary').then(m => m.clearSessionColumnContext()).catch(() => {});
                 try { Object.keys(sessionStorage).filter(k => k.startsWith('db_ticket_') || k.startsWith('db_creds_') || k === 'qi_session_creds').forEach(k => sessionStorage.removeItem(k)); } catch {}
                 set({ currentUser: null, isAuthenticated: false });
@@ -270,7 +270,7 @@ export const useAuthStore = create<AuthState>()(
                 resetUserData();
                 clearSharedAppData();
                 localStorage.removeItem('qi_token');
-                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); } catch {}
+                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); localStorage.removeItem('QuickInsight-smart-questions-v1'); } catch {}
                 try { sessionStorage.clear(); } catch {}
                 set({ currentUser: null, isAuthenticated: false, users: get().users.filter(u => u.id !== userId) });
             },
@@ -283,7 +283,7 @@ export const useAuthStore = create<AuthState>()(
                 resetUserData();
                 clearSharedAppData();
                 localStorage.removeItem('qi_token');
-                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); } catch {}
+                try { localStorage.removeItem('QuickInsight-column-context-session-v1'); localStorage.removeItem('QuickInsight-smart-questions-v1'); } catch {}
                 void import('../services/columnDictionary').then(m => m.clearSessionColumnContext()).catch(() => {});
                 set({ currentUser: guestUser, isAuthenticated: true });
             },

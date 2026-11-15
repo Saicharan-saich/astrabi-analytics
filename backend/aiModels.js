@@ -55,6 +55,54 @@ function resolveModel(requested, requestedEffort, env = process.env) {
     return { model: requested, effort, job: null };
 }
 
+const cacheMark = (ttl) => (ttl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' });
+
+/** Split "column description … QUESTION …" so the description can be cached on its own. */
+function splitForCache(text, headings) {
+    let at = -1;
+    for (const heading of headings) {
+        const match = text.match(new RegExp(`(^|\\n)${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`));
+        if (match && match.index > 0 && (at < 0 || match.index < at)) at = match.index;
+    }
+    return at > 0 ? [text.slice(0, at), text.slice(at)] : null;
+}
+
+/**
+ * Mark the parts of a request that repeat (instructions, then the description
+ * of the user's columns) as cacheable. Only for models with "cache": true.
+ * The text sent is unchanged; it is only divided into blocks.
+ */
+function withCaching(model, messages, env = process.env) {
+    const info = modelInfo(model);
+    const config = catalogue.caching;
+    // AI_PROMPT_CACHE=off sends requests without cache marks.
+    if (/^(off|false|0|no)$/i.test(String(env.AI_PROMPT_CACHE || '').trim())) return messages;
+    if (!info?.cache || !config || !Array.isArray(messages)) return messages;
+    let firstUserDone = false;
+    return messages.map((message) => {
+        if (message.role === 'system') {
+            if (typeof message.content === 'string') {
+                return { ...message, content: [{ type: 'text', text: message.content, cache_control: cacheMark(config.systemTtl) }] };
+            }
+            if (Array.isArray(message.content) && message.content[0]?.type === 'text') {
+                return { ...message, content: message.content.map((part, i) => (i === 0 ? { ...part, cache_control: cacheMark(config.systemTtl) } : part)) };
+            }
+            return message;
+        }
+        if (message.role === 'user' && !firstUserDone && typeof message.content === 'string') {
+            firstUserDone = true;
+            const parts = splitForCache(message.content, config.splitBefore || []);
+            if (!parts) return message;
+            return { ...message, content: [
+                { type: 'text', text: parts[0], cache_control: cacheMark(config.dataTtl) },
+                { type: 'text', text: parts[1] },
+            ] };
+        }
+        if (message.role === 'user') firstUserDone = true;
+        return message;
+    });
+}
+
 /** The request body for OpenRouter's chat completions. */
 function providerBody({ model, effort, messages, max_tokens, temperature, extra = {} }) {
     const info = modelInfo(model);
@@ -62,7 +110,7 @@ function providerBody({ model, effort, messages, max_tokens, temperature, extra 
     const thinking = thinks ? (catalogue.thinkingTokens[effort] || 0) : 0;
     const body = {
         model,
-        messages,
+        messages: withCaching(model, messages),
         max_tokens: Number(max_tokens) + thinking,
         ...(thinks ? { reasoning: { effort, exclude: true } } : {}),
         ...extra,
@@ -72,4 +120,4 @@ function providerBody({ model, effort, messages, max_tokens, temperature, extra 
     return body;
 }
 
-module.exports = { catalogue, EFFORTS, JOB_NAMES, jobConfig, jobModels, modelInfo, modelLabel, resolveModel, providerBody };
+module.exports = { catalogue, EFFORTS, JOB_NAMES, jobConfig, jobModels, modelInfo, modelLabel, resolveModel, providerBody, withCaching, splitForCache };

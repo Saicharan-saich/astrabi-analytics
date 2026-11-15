@@ -41,4 +41,25 @@ describe('AI model jobs', () => {
         expect(modelLabel('anthropic/claude-haiku-5.5')).toBe('Claude Haiku 5.5');
         expect(MODEL_LADDER_LABEL).toBe('Claude Opus 5.5 · Claude Sonnet 5.5 · Claude Haiku 5.5');
     });
+
+    it('cache the instructions for an hour and the column description for five minutes, never the question', () => {
+        const body = providerBody({
+            ...resolveModel('qi:balanced', undefined, {}),
+            messages: [
+                { role: 'system', content: 'RULES' },
+                { role: 'user', content: 'DATA DESCRIPTION\n"revenue": a number\n\nEARLIER IN THIS CHAT\n1. Asked: "x"\n\nNEW MESSAGE\nnow by month' },
+            ],
+            max_tokens: 1600,
+        });
+        expect(body.messages[0].content).toEqual([{ type: 'text', text: 'RULES', cache_control: { type: 'ephemeral', ttl: '1h' } }]);
+        expect(body.messages[1].content).toEqual([
+            { type: 'text', text: 'DATA DESCRIPTION\n"revenue": a number\n', cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: '\nEARLIER IN THIS CHAT\n1. Asked: "x"\n\nNEW MESSAGE\nnow by month' },
+        ]);
+        // The text is unchanged, only divided.
+        expect(body.messages[1].content.map((p: any) => p.text).join('')).toBe('DATA DESCRIPTION\n"revenue": a number\n\nEARLIER IN THIS CHAT\n1. Asked: "x"\n\nNEW MESSAGE\nnow by month');
+        // A message with nothing to split, and images, are left alone.
+        const plain = providerBody({ ...resolveModel('qi:fast', undefined, {}), messages: [{ role: 'user', content: '{"q":1}' }], max_tokens: 200 });
+        expect(plain.messages[0].content).toBe('{"q":1}');
+    });
 });
