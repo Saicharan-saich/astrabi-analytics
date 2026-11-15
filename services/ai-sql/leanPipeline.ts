@@ -34,6 +34,7 @@ import { rowWiseDifferences, unevenBlankPairs, unevenBlankNote } from '../../uti
 import { carriedFilters, carriedFilterRepair, describeCarried, keptFilters } from './carriedFilters';
 import { dictionaryForPrompt, goodDirectionOf } from '../columnDictionary';
 import { discoverRelationships, detectCandidateKeys } from './relationshipDiscovery';
+import { fitToStoredTypes, type StoredTypes } from './storedTypeFix';
 import { fetchWithFallback, PLANNER_MODEL, SOL_MODEL, selectAISQLRoute } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
@@ -827,7 +828,15 @@ export function describeData(dataset: Dataset) {
     let meanings = '';
     try { meanings = dictionaryForPrompt(dataset); } catch { meanings = ''; }
     const columnsText = describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name), repeatingIds, extra);
-    return { model, schema: meanings ? `${columnsText}\n\n${meanings}` : columnsText };
+    // How each column is stored, so a query can be fitted to it before it runs.
+    const textDates = new Map<string, 'DATE' | 'TIMESTAMP'>();
+    for (const field of model.fields) {
+        if (yesNo.has(field.name) || numericColumns.has(field.name)) continue;
+        if (formats.get(field.name) === 'datetime') textDates.set(field.name, 'TIMESTAMP');
+        else if (field.physicalType === 'date' && filled(field.name).slice(0, 50).every(value => typeof value === 'string')) textDates.set(field.name, 'DATE');
+    }
+    const storedTypes: StoredTypes = { yesNo, textDates };
+    return { model, schema: meanings ? `${columnsText}\n\n${meanings}` : columnsText, storedTypes };
 }
 
 export async function runLeanAISQL(question: string, dataset: Dataset, options: LeanRunOptions = {}): Promise<AISQLPipelineResult> {
@@ -835,7 +844,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     const asked = `${question}${options.grain ? `\n(Group dates by ${options.grain}.)` : ''}${options.autoChoose ? '\n(Do not ask a follow-up. Choose the most likely measure and name it in the explanation.)' : ''}${options.requireAnalysis ? '\n(The user asked for an analysis of the data: answer with a query, or ask a follow-up if it is vague. Do not reply with action "chat".)' : ''}`;
     const context = options.context?.filter(turn => turn.question && turn.sql) || [];
     options.onProgress?.('Reading your columns');
-    const { model, schema } = describeData(dataset);
+    const { model, schema, storedTypes } = describeData(dataset);
 
     // ── 1. One AI call: ask, or write the query ──
     // Hard shapes (joins, cohorts, rolling averages, forecasts…) get more thinking.
@@ -967,7 +976,10 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     const standalone = parsed.question || question;
 
     // ── 2. Safety gate, then run locally; one repair if it fails ──
-    let safety = validateReadOnlySQL(parsed.sql);
+    // Fit the query to how the columns are stored (yes/no as text, dates as text)
+    // here, rather than letting it fail and paying for an AI repair.
+    const fitted = fitToStoredTypes(parsed.sql, storedTypes);
+    let safety = validateReadOnlySQL(fitted.sql);
     if (!safety.ok) throw new AISQLPipelineError('sql_validation_failed', `The AI wrote a query that is not read-only (${safety.reason}). Please try again.`);
     let sql = safety.sql;
     options.onProgress?.('Running it on your data');
@@ -984,7 +996,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         tokens += Number(repaired.data?.usage?.total_tokens) || 0;
         const fixed = parseLeanReply(repaired.data?.choices?.[0]?.message?.content || '');
         if (fixed.action === 'answer') {
-            safety = validateReadOnlySQL(fixed.sql);
+            safety = validateReadOnlySQL(fitToStoredTypes(fixed.sql, storedTypes).sql);
             if (safety.ok) {
                 sql = safety.sql;
                 execution = await executeSQLViaDuckDB(dataset.rows, sql, model.timeContext as any, queryTablesOf(dataset));
@@ -1300,9 +1312,10 @@ export interface SavedLeanAnswer {
  */
 export async function rerunSavedAnswer(saved: SavedLeanAnswer, dataset: Dataset): Promise<AISQLPipelineResult> {
     const started = performance.now();
-    const safety = validateReadOnlySQL(saved.sql);
+    const { model, storedTypes } = describeData(dataset);
+    // Answers saved before the stored-type fix may still need it.
+    const safety = validateReadOnlySQL(fitToStoredTypes(saved.sql, storedTypes).sql);
     if (!safety.ok) throw new AISQLPipelineError('sql_validation_failed', `The saved query is not read-only (${safety.reason}).`);
-    const { model } = describeData(dataset);
     const execution = await executeSQLViaDuckDB(dataset.rows, safety.sql, model.timeContext as any, queryTablesOf(dataset));
     if (execution.error) throw new AISQLPipelineError('ai_sql_execution_failed', `The saved query could not run on the current data: ${execution.error}`);
     const series = completeTimeSeries(safety.sql, execution.data || [], saved, model.timeContext, dataset);
