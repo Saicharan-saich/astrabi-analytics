@@ -14,7 +14,7 @@ const dataset = {
 
 function mockResolution(resolution: Record<string, unknown>) {
     vi.mocked(requestAIConversationTurn).mockResolvedValue({
-        model: 'openai/gpt-5.6-luna',
+        model: 'anthropic/claude-sonnet-5.5',
         resolution,
         usage: { prompt_tokens: 40, completion_tokens: 20, total_tokens: 60 },
     });

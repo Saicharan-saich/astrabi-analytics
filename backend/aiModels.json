@@ -1,0 +1,32 @@
+{
+  "_note": "The one place AI models are chosen. The website asks for a job (qi:fast, qi:balanced, qi:deep, qi:vision); the server sends it to the model and reasoning effort set here. Any job can be switched without a code change with an environment variable on the server, e.g. AI_MODEL_DEEP=anthropic/claude-opus-5.5 and AI_EFFORT_DEEP=high. Requests go through OpenRouter (OPENROUTER_API_KEY).",
+  "provider": "openrouter",
+  "jobs": {
+    "qi:balanced": {
+      "model": "anthropic/claude-opus-5.5",
+      "effort": "medium",
+      "use": "Writing the SQL for a question, and re-asking when a check finds a problem. Accuracy matters most here, so it uses the strongest model with moderate thinking."
+    },
+    "qi:deep": {
+      "model": "anthropic/claude-opus-5.5",
+      "effort": "high",
+      "use": "Hard questions: joins across tables, cohorts, retention, rolling averages, what-if, forecasts, fiscal calendars, and repairing a query that failed."
+    },
+    "qi:fast": {
+      "model": "anthropic/claude-sonnet-5.5",
+      "effort": "low",
+      "use": "Understanding the conversation (new question or follow-up), replies in words, what columns mean, and profiling a file at upload. Strong reasoning, quicker and half the price of Opus."
+    },
+    "qi:vision": {
+      "model": "anthropic/claude-haiku-5.5",
+      "effort": "low",
+      "use": "Smart Insight: reading a picture of a chart. Haiku 5.5 is the Claude 5.5 model OpenRouter lists with image input."
+    }
+  },
+  "models": {
+    "anthropic/claude-opus-5.5": { "label": "Claude Opus 5.5", "temperature": false, "reasoning": "required", "images": false },
+    "anthropic/claude-sonnet-5.5": { "label": "Claude Sonnet 5.5", "temperature": false, "reasoning": "required", "images": false },
+    "anthropic/claude-haiku-5.5": { "label": "Claude Haiku 5.5", "temperature": false, "reasoning": "optional", "images": true }
+  },
+  "thinkingTokens": { "low": 4000, "medium": 12000, "high": 24000 }
+}

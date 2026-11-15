@@ -66,6 +66,7 @@ const billingService = createBillingService({
     getPool: () => authPool,
     appUrl: () => process.env.APP_URL || process.env.FRONTEND_URL || 'https://quickinsight.co.uk',
 });
+const { providerBody, resolveModel } = require('./aiModels');
 const { createClientErrorService, registerClientErrorRoutes } = require('./clientErrors');
 // Error reports from browsers (quoted text removed), kept 30 days.
 const clientErrorService = createClientErrorService({ getPool: () => authPool });
@@ -1796,12 +1797,12 @@ app.post('/api/ai-sql/resolve-turn', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedU
                 'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
                 'X-Title': 'QuickInsight AI SQL',
             },
-            body: JSON.stringify({
-                model: AI_SQL_CONVERSATION_MODEL,
+            body: JSON.stringify(providerBody({
+                ...resolveModel(AI_SQL_CONVERSATION_MODEL),
                 messages: buildAIConversationMessages(currentQuestion, previousBusinessQuestion),
                 max_tokens: AI_SQL_CONVERSATION_MAX_TOKENS,
                 temperature: 0,
-            }),
+            })),
         });
 
         if (!providerResponse.ok) {
@@ -1847,14 +1848,14 @@ app.post('/api/ai-sql/resolve-turn', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedU
             user.email,
             'ai_query',
             tokensUsed,
-            AI_SQL_CONVERSATION_MODEL,
+            resolveModel(AI_SQL_CONVERSATION_MODEL).model,
             `purpose:ai_sql_conversation;turn:${resolution.turnType};tokens:${tokensUsed}`,
         );
 
         return res.json({
             success: true,
             resolution,
-            model: AI_SQL_CONVERSATION_MODEL,
+            model: resolveModel(AI_SQL_CONVERSATION_MODEL).model,
             usage: {
                 prompt_tokens: Number(usage.prompt_tokens) || 0,
                 completion_tokens: Number(usage.completion_tokens) || 0,
@@ -1911,7 +1912,7 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
         if (!validated.valid) {
             return res.status(400).json({ success: false, error: validated.error });
         }
-        const { model, messages, max_tokens, temperature, web_search } = validated.value;
+        const { model, effort, messages, max_tokens, temperature, web_search } = validated.value;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -1921,15 +1922,16 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
                 'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
                 'X-Title': 'QuickInsight'
             },
-            body: JSON.stringify({
+            body: JSON.stringify(providerBody({
                 model,
+                effort,
                 messages,
                 max_tokens,
                 temperature,
                 // The model searches the web itself (the provider's own search
                 // where it has one) and cites what it used.
-                ...(web_search ? { plugins: [{ id: 'web', max_results: 5 }] } : {})
-            })
+                extra: web_search ? { plugins: [{ id: 'web', max_results: 5 }] } : {},
+            }))
         });
 
         if (!response.ok) {
@@ -2445,15 +2447,15 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, requireAuthenticatedUser, 
                 'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:3000',
                 'X-Title': 'QuickInsight'
             },
-            body: JSON.stringify({
-                model: 'google/gemini-2.5-flash',
+            body: JSON.stringify(providerBody({
+                ...resolveModel('qi:fast'),
                 messages: [
                     { role: 'system', content: 'You are an expert Data Architect. Respond with ONLY valid JSON - no markdown fences, no explanations, no commentary. Just the raw JSON object.' },
                     { role: 'user', content: sanitizedPrompt }
                 ],
                 temperature: 0.1,
                 max_tokens: 4096
-            })
+            }))
         });
 
         if (!response.ok) {
@@ -2467,7 +2469,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, requireAuthenticatedUser, 
         const tokensUsed = data?.usage?.total_tokens || 0;
 
         // Log usage
-        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, 'google/gemini-2.5-flash', 'profile-dataset');
+        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, resolveModel('qi:fast').model, 'profile-dataset');
 
         if (!content) {
             console.warn('[AI Profile] Empty LLM response');

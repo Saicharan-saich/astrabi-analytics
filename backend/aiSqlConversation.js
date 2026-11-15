@@ -1,6 +1,7 @@
 'use strict';
 
-const AI_SQL_CONVERSATION_MODEL = 'openai/gpt-5.6-luna';
+// Understanding the conversation is the qi:fast job (backend/aiModels.json).
+const AI_SQL_CONVERSATION_MODEL = 'qi:fast';
 const AI_SQL_CONVERSATION_MAX_TOKENS = 220;
 
 const AI_SQL_CONVERSATION_SYSTEM_PROMPT = `You are the sole conversational resolver for an AI SQL application.

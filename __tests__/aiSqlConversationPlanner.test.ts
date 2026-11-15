@@ -29,7 +29,7 @@ describe('AI SQL LLM conversation planner', () => {
 
     it('lets the model keep a complete new question independent from a previous summary', async () => {
         vi.mocked(requestAIConversationTurn).mockResolvedValue({
-            model: 'openai/gpt-5.6-luna',
+            model: 'anthropic/claude-sonnet-5.5',
             resolution: {
                 route: 'analysis',
                 turnType: 'new_question',

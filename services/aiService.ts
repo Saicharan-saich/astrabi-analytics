@@ -7,9 +7,9 @@
  * The AI model interprets purely what it sees in the visual.
  */
 
-import { fetchWithFallback } from './ai-sql/modelConfig';
+import { fetchWithFallback, VISION_MODEL } from './ai-sql/modelConfig';
 
-const TIMEOUT_MS = 20000;
+const TIMEOUT_MS = 45000; // Claude thinks briefly before describing the chart
 
 // Simple cache to avoid redundant API calls for the same chart
 const insightCache = new Map<string, string>();
@@ -219,7 +219,7 @@ Rules:
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userContent }
             ],
-            { temperature: 0.4, max_tokens: 800, timeout: TIMEOUT_MS }
+            { model: VISION_MODEL, temperature: 0.4, max_tokens: 800, timeout: TIMEOUT_MS }
         );
 
         const insight = data?.choices?.[0]?.message?.content || '⚠️ No interpretation was generated.';

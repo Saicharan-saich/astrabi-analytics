@@ -47,12 +47,17 @@ describe('backend security boundaries', () => {
   it('accepts only enabled models and bounded request parameters', () => {
     const models = allowedLlmModels();
     const accepted = validateLlmRequest({
-      model: 'openai/gpt-5.6-terra',
+      model: 'qi:balanced',
       messages: [{ role: 'user', content: 'Plan sales by region' }],
       max_tokens: 1200,
       temperature: 0.1,
     }, models);
     expect(accepted.valid).toBe(true);
+    expect(accepted.value).toMatchObject({ model: 'anthropic/claude-opus-5.5', effort: 'medium', job: 'qi:balanced' });
+
+    // The old GPT models are no longer enabled.
+    expect(validateLlmRequest({ model: 'openai/gpt-5.6-sol', messages: [{ role: 'user', content: 'x' }] }, models)).toMatchObject({ valid: false });
+    expect(validateLlmRequest({ model: 'qi:deep', effort: 'extreme', messages: [{ role: 'user', content: 'x' }] }, models)).toMatchObject({ valid: false });
 
     expect(validateLlmRequest({
       model: 'untrusted/provider-model',
@@ -60,12 +65,12 @@ describe('backend security boundaries', () => {
     }, models)).toMatchObject({ valid: false });
 
     expect(validateLlmRequest({
-      model: 'openai/gpt-5.6-luna',
+      model: 'qi:fast',
       messages: [{ role: 'tool', content: 'test' }],
     }, models)).toMatchObject({ valid: false });
 
     expect(validateLlmRequest({
-      model: 'openai/gpt-5.6-sol',
+      model: 'qi:deep',
       messages: [{ role: 'user', content: 'test' }],
       max_tokens: 9000,
     }, models)).toMatchObject({ valid: false });
@@ -73,7 +78,7 @@ describe('backend security boundaries', () => {
 
   it('permits the existing bounded chart-image message shape', () => {
     const result = validateLlmRequest({
-      model: 'google/gemini-2.5-flash',
+      model: 'qi:vision',
       messages: [{
         role: 'user',
         content: [
@@ -89,7 +94,7 @@ describe('backend security boundaries', () => {
 describe('web-checked AI requests (column meanings)', () => {
   const { webSearchEnabled, WEB_SEARCH_MAX_CHARS } = require('../backend/security.js');
   const models = allowedLlmModels();
-  const base = { model: 'openai/gpt-5.6-luna', messages: [{ role: 'user', content: 'Columns: "LOS": a number' }] };
+  const base = { model: 'qi:fast', messages: [{ role: 'user', content: 'Columns: "LOS": a number' }] };
 
   it('passes the flag through only when it is a boolean', () => {
     expect(validateLlmRequest({ ...base, web_search: true }, models)).toMatchObject({ valid: true, value: { web_search: true } });

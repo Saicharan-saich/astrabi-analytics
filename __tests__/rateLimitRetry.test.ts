@@ -55,7 +55,7 @@ describe('AI rate-limit retry timing', () => {
     await vi.advanceTimersByTimeAsync(9_999);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
-    await expect(request).resolves.toMatchObject({ model: 'openai/gpt-5.6-luna' });
+    await expect(request).resolves.toMatchObject({ model: 'qi:fast' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

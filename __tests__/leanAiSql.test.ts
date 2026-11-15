@@ -40,7 +40,7 @@ const dataset = {
 const aiReplies = (...contents: object[]) => {
     for (const content of contents) {
         vi.mocked(fetchWithFallback).mockResolvedValueOnce({
-            model: 'openai/gpt-5.6-terra',
+            model: 'anthropic/claude-opus-5.5',
             data: { choices: [{ message: { content: JSON.stringify(content) } }], usage: { total_tokens: 100 } },
         });
     }

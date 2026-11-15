@@ -34,7 +34,7 @@ import { rowWiseDifferences, unevenBlankPairs, unevenBlankNote } from '../../uti
 import { carriedFilters, carriedFilterRepair, describeCarried, keptFilters } from './carriedFilters';
 import { dictionaryForPrompt, goodDirectionOf } from '../columnDictionary';
 import { discoverRelationships, detectCandidateKeys } from './relationshipDiscovery';
-import { fetchWithFallback, PLANNER_MODEL } from './modelConfig';
+import { fetchWithFallback, PLANNER_MODEL, SOL_MODEL, selectAISQLRoute } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
 import { profileResult } from './resultProfiler';
@@ -838,6 +838,8 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     const { model, schema } = describeData(dataset);
 
     // ── 1. One AI call: ask, or write the query ──
+    // Hard shapes (joins, cohorts, rolling averages, forecasts…) get more thinking.
+    const firstModel = selectAISQLRoute(question, 'sql').tier === 'sol' ? SOL_MODEL : PLANNER_MODEL;
     options.onProgress?.(context.length ? 'Building on the last answer' : 'Writing the query');
     const userContent = context.length
         ? `DATA DESCRIPTION\n${schema}\n\nEARLIER IN THIS CHAT\n${formatContextForPrompt(context)}\n\nNEW MESSAGE\n${asked}`
@@ -845,7 +847,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     const reply = await fetchWithFallback([
         { role: 'system', content: context.length ? `${LEAN_SYSTEM_PROMPT}${LEAN_CONTEXT_RULES}` : LEAN_SYSTEM_PROMPT },
         { role: 'user', content: userContent },
-    ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
+    ], { model: firstModel, temperature: 0, max_tokens: 1600, timeout: 90_000, requestPurpose: options.requestPurpose });
     let tokens = Number(reply.data?.usage?.total_tokens) || 0;
     const parsed = parseLeanReply(reply.data?.choices?.[0]?.message?.content || '');
 
@@ -876,7 +878,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         const reread = await fetchWithFallback([
             { role: 'system', content: LEAN_SYSTEM_PROMPT },
             { role: 'user', content: `DATA DESCRIPTION\n${schema}\n\nQUESTION\n${asked}\n\n${turnAroundRepair(turned, parsed.question || parsed.title || '')}` },
-        ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
+        ], { model: SOL_MODEL, temperature: 0, max_tokens: 1600, timeout: 120_000, requestPurpose: options.requestPurpose });
         tokens += Number(reread.data?.usage?.total_tokens) || 0;
         const second = parseLeanReply(reread.data?.choices?.[0]?.message?.content || '');
         if (second.action === 'answer' && !againstMeaning(second) && !readingTurnedAround(question, second.question || second.title)) {
@@ -897,7 +899,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         const again = await fetchWithFallback([
             { role: 'system', content: `${LEAN_SYSTEM_PROMPT}${LEAN_CONTEXT_RULES}` },
             { role: 'user', content: `${userContent}\n\n${carriedFilterRepair(carried)}` },
-        ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
+        ], { model: SOL_MODEL, temperature: 0, max_tokens: 1600, timeout: 120_000, requestPurpose: options.requestPurpose });
         tokens += Number(again.data?.usage?.total_tokens) || 0;
         const second = parseLeanReply(again.data?.choices?.[0]?.message?.content || '');
         if (second.action === 'answer' && !carriedFilters(question, second.sql, earlierSql).length) Object.assign(parsed, second);
@@ -922,7 +924,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         const again = await fetchWithFallback([
             { role: 'system', content: context.length ? `${LEAN_SYSTEM_PROMPT}${LEAN_CONTEXT_RULES}` : LEAN_SYSTEM_PROMPT },
             { role: 'user', content: `${userContent}\n\n${ONE_SIDED_REPAIR}` },
-        ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
+        ], { model: SOL_MODEL, temperature: 0, max_tokens: 1600, timeout: 120_000, requestPurpose: options.requestPurpose });
         tokens += Number(again.data?.usage?.total_tokens) || 0;
         const second = parseLeanReply(again.data?.choices?.[0]?.message?.content || '');
         if (second.action === 'answer' && !oneSidedFilter(second.sql, question) && !carriedFilters(question, second.sql, earlierSql).length
@@ -978,7 +980,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         const repaired = await fetchWithFallback([
             { role: 'system', content: `${LEAN_SYSTEM_PROMPT}\n\nThe query below failed in DuckDB. Return the same JSON shape with a corrected "sql". Keep the meaning of the question.` },
             { role: 'user', content: `DATA DESCRIPTION\n${schema}\n\nQUESTION\n${standalone}\n\nFAILED SQL\n${sql}\n\nDUCKDB ERROR (values removed)\n${scrubErrorForModel(execution.error)}` },
-        ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
+        ], { model: SOL_MODEL, temperature: 0, max_tokens: 1600, timeout: 120_000, requestPurpose: options.requestPurpose });
         tokens += Number(repaired.data?.usage?.total_tokens) || 0;
         const fixed = parseLeanReply(repaired.data?.choices?.[0]?.message?.content || '');
         if (fixed.action === 'answer') {

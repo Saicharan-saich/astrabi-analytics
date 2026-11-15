@@ -15,14 +15,21 @@ export const BACKEND_LLM_URL = `${API_BASE}/llm/chat`;
 // Legacy URL export kept for compatibility. All calls still target our backend.
 export const OPENROUTER_API_URL = BACKEND_LLM_URL;
 
+import AI_MODELS from '../../backend/aiModels.json';
+
 /**
- * OpenRouter model ladder for AI SQL. All three are OpenAI GPT-5.6 models and
- * are requested through the existing backend proxy, so keys, quotas and the
- * request/response shape remain unchanged.
+ * AI jobs. The website asks for a job; the server sends it to the model and
+ * reasoning effort set in backend/aiModels.json (Claude via OpenRouter), so a
+ * model can be changed on the server without changing this code.
  */
-export const LUNA_MODEL = 'openai/gpt-5.6-luna';
-export const TERRA_MODEL = 'openai/gpt-5.6-terra';
-export const SOL_MODEL = 'openai/gpt-5.6-sol';
+/** Conversation, replies in words, column meanings, profiling. */
+export const LUNA_MODEL = 'qi:fast';
+/** Writing the SQL for a question. */
+export const TERRA_MODEL = 'qi:balanced';
+/** Hard questions and repairs. */
+export const SOL_MODEL = 'qi:deep';
+/** Reading a picture of a chart. */
+export const VISION_MODEL = 'qi:vision';
 
 /** Fast path for straightforward questions and single-table SQL. */
 export const PRIMARY_MODEL = LUNA_MODEL;
@@ -30,8 +37,18 @@ export const PRIMARY_MODEL = LUNA_MODEL;
 /** Balanced default for structured analytical planning. */
 export const PLANNER_MODEL = TERRA_MODEL;
 
+type ModelCatalogue = { jobs: Record<string, { model: string; effort: string }>; models: Record<string, { label: string }> };
+const catalogue = AI_MODELS as unknown as ModelCatalogue;
+
+/** "anthropic/claude-opus-5.5" or "qi:balanced" → "Claude Opus 5.5". */
+export function modelLabel(model: string | undefined | null): string {
+    if (!model) return 'Model unavailable';
+    const real = catalogue.jobs[model]?.model ?? model;
+    return catalogue.models[real]?.label ?? real.replace(/^[^/]+\//, '');
+}
+
 /** A short, user-readable description for the AI SQL screen. */
-export const MODEL_LADDER_LABEL = 'GPT-5.6 Luna · Terra · Sol';
+export const MODEL_LADDER_LABEL = [...new Set(Object.values(catalogue.jobs).map(job => modelLabel(job.model)))].join(' · ');
 
 export type AISQLWorkload = 'plan' | 'sql';
 
@@ -70,7 +87,8 @@ export function selectAISQLModel(question: string, workload: AISQLWorkload): str
 }
 
 /** Default timeout for AI requests */
-export const DEFAULT_TIMEOUT_MS = 60000;
+// Claude thinks before it answers, so allow longer than a plain completion.
+export const DEFAULT_TIMEOUT_MS = 90000;
 
 /** Fallback delay when a rate-limited response omits server timing headers. */
 const RATE_LIMIT_RETRY_DELAY_MS = 3000;
@@ -153,6 +171,8 @@ export async function fetchWithFallback(
          * backend refuses anything larger or non-text.
          */
         webSearch?: boolean;
+        /** More or less thinking for this one call than the job's default. */
+        effort?: 'low' | 'medium' | 'high';
     }
 ): Promise<{ data: any; model: string }> {
 
@@ -188,6 +208,7 @@ export async function fetchWithFallback(
                     messages,
                     temperature,
                     max_tokens,
+                    ...(options?.effort ? { effort: options.effort } : {}),
                     ...(options?.webSearch ? { web_search: true } : {}),
                 }),
                 signal: controller.signal,
@@ -205,7 +226,8 @@ export async function fetchWithFallback(
                     );
                 }
 
-                return { data, model };
+                // The model that actually answered (the server resolves the job).
+                return { data, model: typeof data.model === 'string' && data.model ? data.model : model };
             }
 
             // 401 Unauthorized — user not logged in or session revoked

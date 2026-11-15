@@ -100,7 +100,7 @@ export function parseChatReply(content: string): Omit<ChatReply, 'tokens'> {
 /** One conversational AI call, on the lighter model. */
 export async function chatWithAI(message: string, dataset: Dataset, history: ChatHistoryItem[], lastSql?: string): Promise<ChatReply> {
     const reply = await fetchWithFallback(buildChatMessages(message, dataset, history, lastSql), {
-        model: LUNA_MODEL, temperature: 0.3, max_tokens: 700, timeout: 30_000,
+        model: LUNA_MODEL, temperature: 0.3, max_tokens: 700, timeout: 60_000,
     });
     const parsed = parseChatReply(reply.data?.choices?.[0]?.message?.content || '');
     return { ...parsed, tokens: Number(reply.data?.usage?.total_tokens) || 0 };

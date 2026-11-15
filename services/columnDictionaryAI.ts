@@ -40,8 +40,8 @@ async function ask(dataset: Dataset, online: boolean): Promise<Record<string, un
         { role: 'system', content: online ? SYSTEM_ONLINE : SYSTEM },
         { role: 'user', content: dictionaryRequest(dataset, { online }) },
     ], online
-        ? { model: PRIMARY_MODEL, temperature: 0, max_tokens: 4000, timeout: 120_000, webSearch: true }
-        : { model: PRIMARY_MODEL, temperature: 0, max_tokens: 2400, timeout: 45_000 });
+        ? { model: PRIMARY_MODEL, effort: 'medium', temperature: 0, max_tokens: 4000, timeout: 150_000, webSearch: true }
+        : { model: PRIMARY_MODEL, effort: 'medium', temperature: 0, max_tokens: 2400, timeout: 90_000 });
     const message = reply.data?.choices?.[0]?.message;
     const parsed = readJson(String(message?.content || '')) as Record<string, unknown> | null;
     if (!parsed || typeof parsed !== 'object') return null;

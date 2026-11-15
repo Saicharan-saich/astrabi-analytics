@@ -4,13 +4,10 @@ const crypto = require('node:crypto');
 const dns = require('node:dns').promises;
 const net = require('node:net');
 
-const DEFAULT_ALLOWED_LLM_MODELS = Object.freeze([
-    'openai/gpt-5.6-luna',
-    'openai/gpt-5.6-terra',
-    'openai/gpt-5.6-sol',
-    // Retained for non-AI-SQL callers that rely on the proxy default.
-    'google/gemini-2.5-flash',
-]);
+const { JOB_NAMES, EFFORTS, jobModels, resolveModel } = require('./aiModels');
+
+/** Jobs (qi:fast …) and the models they map to, from aiModels.json. */
+const DEFAULT_ALLOWED_LLM_MODELS = Object.freeze([...JOB_NAMES, ...new Set(jobModels())]);
 
 function createConnectionId(prefix = 'db') {
     const safePrefix = String(prefix).replace(/[^a-z0-9_-]/gi, '').slice(0, 12) || 'db';
@@ -79,12 +76,12 @@ async function assertSafeDatabaseHost(host, port, options = {}) {
     return value;
 }
 
-function allowedLlmModels(extraModels = '') {
+function allowedLlmModels(extraModels = '', env = process.env) {
     const extras = String(extraModels || '')
         .split(',')
         .map(value => value.trim())
         .filter(Boolean);
-    return new Set([...DEFAULT_ALLOWED_LLM_MODELS, ...extras]);
+    return new Set([...JOB_NAMES, ...jobModels(env), ...extras]);
 }
 
 function contentSize(content) {
@@ -113,12 +110,16 @@ function validateLlmRequest(body, allowedModels = allowedLlmModels()) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
         return { valid: false, error: 'Request body must be an object' };
     }
-    const model = typeof body.model === 'string' && body.model.trim()
+    const requestedModel = typeof body.model === 'string' && body.model.trim()
         ? body.model.trim()
-        : 'google/gemini-2.5-flash';
-    if (!allowedModels.has(model)) {
+        : 'qi:fast';
+    if (!allowedModels.has(requestedModel)) {
         return { valid: false, error: 'Requested AI model is not enabled' };
     }
+    if (body.effort !== undefined && !EFFORTS.includes(body.effort)) {
+        return { valid: false, error: `effort must be one of ${EFFORTS.join(', ')}` };
+    }
+    const { model, effort, job } = resolveModel(requestedModel, body.effort);
     if (!Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 24) {
         return { valid: false, error: 'messages must contain between 1 and 24 entries' };
     }
@@ -165,6 +166,8 @@ function validateLlmRequest(body, allowedModels = allowedLlmModels()) {
         valid: true,
         value: {
             model,
+            effort,
+            job,
             messages: body.messages,
             max_tokens: maxTokens,
             temperature,

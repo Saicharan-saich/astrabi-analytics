@@ -39,7 +39,7 @@ describe('server-owned AI SQL conversation resolver', () => {
 
     it('keeps the prompt, model and small output budget server-owned', () => {
         const messages = buildAIConversationMessages('For 2025 show profit by product', 'Revenue by region');
-        expect(AI_SQL_CONVERSATION_MODEL).toBe('openai/gpt-5.6-luna');
+        expect(AI_SQL_CONVERSATION_MODEL).toBe('qi:fast');
         expect(AI_SQL_CONVERSATION_MAX_TOKENS).toBe(220);
         expect(messages).toHaveLength(2);
         expect(messages[0].role).toBe('system');
