@@ -16,6 +16,7 @@
  *      returned numbers in the browser (the AI never sees them).
  */
 
+import { decimalsFor } from '../../utils/numberKind';
 import { ColumnType, type Dataset } from '../../types';
 import { describeDatasetShape, shapeForModel } from '../datasetShape';
 import { isBooleanCell } from '../../utils/booleanCell';
@@ -354,7 +355,8 @@ const formatNumber = (value: number) => {
     if (abs >= 1e9) return `${sign}${symbol}${(abs / 1e9).toFixed(1)}B`;
     if (abs >= 1e6) return `${sign}${symbol}${(abs / 1e6).toFixed(1)}M`;
     if (abs >= 1e4) return `${sign}${symbol}${(abs / 1e3).toFixed(1)}K`;
-    return `${sign}${symbol}${Number.isInteger(abs) ? abs.toLocaleString() : abs.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    // A value with decimals keeps 2 places (4.67); whole numbers stay whole.
+    return `${sign}${symbol}${abs.toLocaleString('en-GB', { minimumFractionDigits: decimalsFor(abs), maximumFractionDigits: decimalsFor(abs) })}`;
 };
 
 const NOT_MONEY = /(count|number|num_|qty|quantity|units|orders|customers|pct|percent|share|ratio|rate|margin|rank)/i;
@@ -455,7 +457,9 @@ export function buildInsights(rows: Record<string, any>[], profile: ResultProfil
     if (DIFFERENCE_MEASURE.test(metric)) return insights;
     if (leader && runner && Number(runner[metric]) !== 0) {
         const gap = ((Number(leader[metric]) - Number(runner[metric])) / Math.abs(Number(runner[metric]))) * 100;
-        insights.push(gap < 1
+        insights.push(Number(leader[metric]) === Number(runner[metric])
+            ? `${leader[dimension]} and ${runner[dimension]} are level, both at ${formatNumber(Number(leader[metric]))}.`
+            : gap < 1
             ? `${leader[dimension]} and ${runner[dimension]} are almost level (${formatNumber(Number(leader[metric]))} vs ${formatNumber(Number(runner[metric]))}).`
             : `${leader[dimension]} is ${pct(gap)} ahead of ${runner[dimension]} (${formatNumber(Number(leader[metric]))} vs ${formatNumber(Number(runner[metric]))}).`);
     }

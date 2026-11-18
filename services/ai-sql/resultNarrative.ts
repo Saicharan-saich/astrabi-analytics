@@ -6,6 +6,7 @@ import type {
     SemanticModel,
     SemanticType,
 } from './types';
+import { decimalsFor } from '../../utils/numberKind';
 import { isRateName } from '../../utils/numberKind';
 import { correlationInWords, friendlyNumber, plainName } from './plainLabels';
 
@@ -107,10 +108,11 @@ function formatValue(value: unknown, type: SemanticType = 'quantity'): string {
     if (type === 'percentage') return `${number.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
     if (type === 'currency' && narrativeCurrency) {
         return number.toLocaleString(undefined, {
-            style: 'currency', currency: narrativeCurrency, maximumFractionDigits: Number.isInteger(number) ? 0 : 2,
+            style: 'currency', currency: narrativeCurrency, minimumFractionDigits: decimalsFor(number), maximumFractionDigits: decimalsFor(number),
         });
     }
-    return number.toLocaleString(undefined, { maximumFractionDigits: Number.isInteger(number) ? 0 : 2 });
+    // A value with decimals keeps 2 places (4.67); whole numbers stay whole.
+    return number.toLocaleString('en-GB', { minimumFractionDigits: decimalsFor(number), maximumFractionDigits: decimalsFor(number) });
 }
 
 function resolveKey(row: Record<string, any>, field: string): string | null {
@@ -437,7 +439,8 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
                 summary: `${groupName(leader, dimension)} comes first with ${formatValue(leader[metric], type)}${runner ? `, then ${groupName(runner, dimension)} with ${formatValue(runner[metric], type)}` : ''}.${data.length > 2 ? ` ${data.length.toLocaleString()} ${plainName(dimension)} values are ranked in the chart.` : ''}`,
             };
         }
-        if (isRate) {
+        // Rates and averages are highest/lowest, not "the most".
+        if (isRate || averaged) {
             return {
                 version: 1, verifiedFrom: 'executed_result', kind: 'breakdown',
                 headline: `${groupName(leader, dimension)} has the highest ${label}`,

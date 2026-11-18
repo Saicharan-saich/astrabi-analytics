@@ -72,7 +72,8 @@ function csatCsv(): Buffer {
     const teams = ['Support Team A', 'Support Team B', 'Support Team C', 'Specialist Team'];
     for (let i = 0; i < 400; i++) {
         // About 1 in 12 tickets has no rating: a blank cell.
-        const score = i % 12 === 0 ? '' : String([5, 5, 4, 5, 3, 5, 4, 5][i % 8]);
+        // Scores vary so the team averages have decimals (about 4.50, 4.01, 3.99, 4.00).
+        const score = i % 12 === 0 ? '' : String(3 + ((i * 7 + Math.floor(i / 4)) % 3));
         lines.push(`T${2000 + i},${teams[i % 4]},${score}`);
     }
     return Buffer.from(lines.join('\n'));
