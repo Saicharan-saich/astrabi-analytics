@@ -225,7 +225,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
                         {ready.totals ? (ready.totals.ok ? 'Every total matches your file.' : 'Some totals differ from your file; the reason is below.') : ''}
                     </p>
                     <ul className="qi-chk-tally" aria-label="Summary">
-                        <li><CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> {ready.fixed.length} fixed for you</li>
+                        {ready.fixed.length > 0 && <li><CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> {ready.fixed.length} fixed for you</li>}
                         {toDecide > 0 && <li className="is-attention"><AlertCircle className="h-3.5 w-3.5" aria-hidden /> {toDecide} to decide</li>}
                         {ready.blanks.length > 0 && <li><CircleDashed className="h-3.5 w-3.5" aria-hidden /> {ready.blanks.length} column{ready.blanks.length === 1 ? '' : 's'} with blanks</li>}
                     </ul>
