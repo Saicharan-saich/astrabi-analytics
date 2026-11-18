@@ -6,6 +6,7 @@
  * This profile drives the deterministic chart recommendation.
  */
 
+import { isRateName } from '../../utils/numberKind';
 import { SemanticModel, AnalysisPlan, ResultProfile, SemanticType } from './types';
 
 /**
@@ -94,7 +95,7 @@ export function profileResult(
             } else if (typeof firstVal === 'number') {
                 metricColumns.push(col);
                 // Infer semantic type from column name
-                if (colLower.includes('pct') || colLower.includes('percent') || colLower.includes('rate') || colLower.includes('margin') || colLower.includes('discount')) {
+                if (isRateName(colLower) || colLower.includes('margin') || colLower.includes('discount')) {
                     metricSemanticTypes[col] = 'percentage';
                 } else if (colLower.includes('sales') || colLower.includes('revenue') || colLower.includes('cost') || colLower.includes('price') || colLower.includes('profit') || colLower.includes('amount')) {
                     metricSemanticTypes[col] = 'currency';
@@ -115,7 +116,7 @@ export function profileResult(
                 // Fallback: column name strongly suggests a metric (aggregated alias)
                 metricColumns.push(col);
                 // Infer from base column name, not just the suffix
-                if (colLower.includes('pct') || colLower.includes('margin') || colLower.includes('discount') || colLower.includes('rate')) {
+                if (isRateName(colLower) || colLower.includes('margin') || colLower.includes('discount')) {
                     metricSemanticTypes[col] = 'percentage';
                 } else if (colLower.includes('count') || colLower.includes('qty') || colLower.includes('quantity')) {
                     metricSemanticTypes[col] = 'count';

@@ -34,7 +34,8 @@ export function averageValuesQuery(sql: string): { sql: string; column: string }
     const column = unquote(averages[0][2]);
     let listed = sql.replace(
         new RegExp(String.raw`\bROUND\s*\(\s*AVG\s*\(\s*(${IDENT})\s*\)\s*,\s*\d+\s*\)|\bAVG\s*\(\s*(${IDENT})\s*\)`, 'gi'),
-        (_whole, inRound, plain) => `LIST(CAST(${inRound || plain} AS DOUBLE))`,
+        // Blanks are left out, exactly as AVG leaves them out.
+        (_whole, inRound, plain) => `LIST(CAST(${inRound || plain} AS DOUBLE)) FILTER (WHERE ${inRound || plain} IS NOT NULL)`,
     );
     // HAVING on an average cannot be kept once it is a list.
     if (/\bHAVING\b[^)]*\bLIST\(/i.test(listed)) return null;
@@ -53,9 +54,12 @@ export function averageNotesFromValues(
     listRows: Record<string, any>[], shown: Record<string, any>[], dimensions: string[], column: string,
 ): string[] {
     const label = words(column);
+    // Lists arrive as plain arrays (duckdbEngine listValues). A typed array or
+    // raw vector's buffer is not trusted: its blank slots hold leftover bytes.
     const asList = (value: unknown): unknown[] | undefined => Array.isArray(value) ? value
-        : value && typeof value === 'object' && typeof (value as any).toArray === 'function' ? Array.from((value as any).toArray() as ArrayLike<unknown>)
-            : ArrayBuffer.isView(value) ? Array.from(value as unknown as ArrayLike<number>) : undefined;
+        : value && typeof value === 'object' && typeof (value as any).get === 'function' && typeof (value as any).length === 'number'
+            ? Array.from({ length: (value as any).length as number }, (_, i) => (value as any).get(i) ?? null)
+            : undefined;
     const groups = listRows
         .map(row => ({ row, values: Object.values(row).map(asList).find(Boolean) }))
         .filter((item): item is { row: Record<string, any>; values: unknown[] } => Boolean(item.values));

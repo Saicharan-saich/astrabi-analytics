@@ -1,3 +1,4 @@
+import { decimalsFor, isCountName, isRateName } from './numberKind';
 /**
  * Chart color palettes, color helpers, and data formatting utilities
  * extracted from ChartVisualization.tsx for reusability and testability.
@@ -211,18 +212,18 @@ export const formatNumber = (
     // Intelligent Auto-Format
     if (!effectiveFormat || effectiveFormat === 'auto') {
         const metricRef = (config?.metric || yLabel || yKey || '').toLowerCase();
-        if (metricRef.includes('count') || metricRef.includes('quantity') || metricRef.includes('volume') || metricRef.includes('users') || metricRef.includes('sessions')) {
+        if (isCountName(metricRef)) {
             effectiveFormat = value < 1000 ? 'raw' : 'compact';
-        } else if (metricRef.includes('sales') || metricRef.includes('revenue') || metricRef.includes('price') || metricRef.includes('cost') || metricRef.includes('amount') || metricRef.includes('profit') || metricRef.includes('margin')) {
-            effectiveFormat = 'currency_usd';
-        } else if (metricRef.includes('rate') || metricRef.includes('percent') || metricRef.includes('conversion') || metricRef.includes('ratio')) {
+        } else if (isRateName(metricRef)) {
             effectiveFormat = 'percent';
         } else {
+            // Money without a stated currency gets no symbol (never "$" by default).
             effectiveFormat = 'compact';
         }
     }
 
-    const fractionDigits = formatting?.decimals !== undefined ? formatting.decimals : (effectiveFormat === 'currency_usd' || effectiveFormat === 'percent' ? 2 : 0);
+    // A value with decimals keeps 2 places (4.67, never "5"); whole numbers stay whole.
+    const fractionDigits = formatting?.decimals !== undefined ? formatting.decimals : (effectiveFormat === 'percent' ? 2 : decimalsFor(value));
 
     try {
         switch (effectiveFormat) {
@@ -241,8 +242,9 @@ export const formatNumber = (
             }
             case 'compact': {
                 // Premium compact: one decimal for large values, clean integers below 1000.
-                const cd = formatting?.decimals !== undefined ? formatting.decimals : (Math.abs(value) >= 1000 ? 1 : 0);
-                return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short', minimumFractionDigits: 0, maximumFractionDigits: cd }).format(value);
+                const small = Math.abs(value) < 1000;
+                const cd = formatting?.decimals !== undefined ? formatting.decimals : (small ? decimalsFor(value) : 1);
+                return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short', minimumFractionDigits: small ? cd : 0, maximumFractionDigits: cd }).format(value);
             }
             default:
                 return value.toLocaleString(undefined, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });

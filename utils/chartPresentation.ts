@@ -1,3 +1,4 @@
+import { isRateName } from './numberKind';
 /** Keep chart text readable when a saved light-theme formatting choice is
  * displayed on a dark canvas (or vice versa). */
 export function readableChartTextColor(color: string | undefined, dark: boolean, fallback: string): string {
@@ -62,7 +63,7 @@ export function gaugeScale(values: number[], goal: number | undefined, metricNam
     const value = values.reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
     if (goal && Number.isFinite(goal) && goal > 0) return { value, max: Math.max(goal, value), basis: 'goal' };
     const name = metricName.toLowerCase();
-    const looksLikeRate = /(percent|pct|ratio|rate|share|conversion|margin)/.test(name);
+    const looksLikeRate = isRateName(name) || /\bmargin\b/.test(name);
     if (looksLikeRate && value >= 0 && value <= 1) return { value, max: 1, basis: 'percent' };
     if (looksLikeRate && value >= 0 && value <= 100) return { value, max: 100, basis: 'percent' };
     return { value, max: niceCeiling(value * 1.15), basis: 'ceiling' };

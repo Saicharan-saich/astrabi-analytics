@@ -1,3 +1,4 @@
+import { isRateName } from '../utils/numberKind';
 import { dateKeyOf } from '../utils/dateKey';
 import { CanonicalMapping, Dataset, DimDateRow, QuestionTemplate, QueryConfig } from "../types";
 import { buildQueryPlan, compileSQL, compileEnrichedSQL, executeQueryPlan, validatePlan, dimensionId } from './queryPlan';
@@ -29,9 +30,7 @@ export function metricUnitFamily(name: string): 'currency' | 'percent' | 'count'
     const n = (name || '').toLowerCase();
     // Percent must be checked before currency so "margin_pct" beats "margin".
     if (
-        n.includes('percent') || n.includes('ratio') || n.includes('share') ||
-        n.includes('margin_pct') || n.includes('conversion') ||
-        (n.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(n))
+        n.includes('margin_pct') || isRateName(n)
     ) return 'percent';
     if (
         n.includes('revenue') || n.includes('sales') || n.includes('price') ||
@@ -968,7 +967,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                                 const stats = currSecGroups[key][sm];
                                 const smLower = sm.toLowerCase();
                                 // Use AVG for rate/discount/percentage metrics, SUM for others
-                                const isAvgMetric = smLower.includes('discount') || smLower.includes('rate')
+                                const isAvgMetric = smLower.includes('discount') || isRateName(smLower)
                                     || smLower.includes('ratio') || smLower.includes('avg')
                                     || smLower.includes('average') || smLower.includes('margin')
                                     || smLower.includes('percent') || smLower.includes('pct')

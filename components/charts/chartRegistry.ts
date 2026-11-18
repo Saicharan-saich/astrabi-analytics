@@ -8,6 +8,7 @@
 //   3. Date formatting utilities for chart labels
 // ═══════════════════════════════════════════════════════════════════
 
+import { isRateName } from '../../utils/numberKind';
 import {
     BarChart2, LineChart as LineChartIcon, TrendingUp, PieChart as PieIcon,
     Activity, Grid, Disc, Circle, Hexagon, ScatterChart, CircleDot,
@@ -95,9 +96,7 @@ export function detectNumberFormat(metricName: string): NumberFormatType {
 
     if (
         name.includes('discount') ||
-        (name.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(name)) ||
-        name.includes('ratio') || name.includes('percent') ||
-        name.includes('share') || name.includes('conversion') ||
+        isRateName(name) ||
         name.includes('margin_pct')
     ) {
         return 'percent';
@@ -185,9 +184,7 @@ export function formatAxisValue(
     const isCurrency = name.includes('sales') || name.includes('revenue') ||
         name.includes('price') || name.includes('cost') ||
         name.includes('amount') || name.includes('profit');
-    const isPercent = name.includes('percent') ||
-        (name.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(name)) ||
-        name.includes('ratio') || name.includes('share');
+    const isPercent = isRateName(name);
 
     if (isPercent) {
         return value.toFixed(1) + '%';

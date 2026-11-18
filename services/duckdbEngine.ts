@@ -18,6 +18,8 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
 import { logger } from './logger';
 import { finiteOrNull } from '../utils/numberSafety';
+
+import { listValues } from '../utils/duckdbLists';
 import { createSerializedAsyncQueue } from '../utils/serializedAsync';
 import { duckColumnType, duckLiteral, duckTableName } from '../utils/duckColumnType';
 
@@ -358,8 +360,8 @@ async function executeSQLQuery(sql: string): Promise<DuckDBResult> {
                         // division or aggregate could yield becomes null, never garbage.
                         // Lists (LIST(...)) come back as Arrow vectors: hand back plain arrays.
                         row[col] = typeof val === 'bigint' ? Number(val)
-                            : val && typeof val === 'object' && typeof (val as any).toArray === 'function'
-                                ? Array.from((val as any).toArray() as ArrayLike<unknown>, item => (typeof item === 'bigint' ? Number(item) : item))
+                            : val && typeof val === 'object' && typeof (val as any).get === 'function' && typeof (val as any).length === 'number'
+                                ? listValues(val)
                                 : finiteOrNull(val);
                     }
                 } else {

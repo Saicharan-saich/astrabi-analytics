@@ -1,5 +1,6 @@
 import { fillMonthlyGaps } from '../services/ai-sql/numberChecks';
 import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react';
+import { decimalsFor, isCountName, isRateName } from '../utils/numberKind';
 import { seriesName } from '../utils/seriesName';
 // html2canvas is only needed when the user exports a chart to PNG — load it
 // lazily so it stays out of the initial bundle.
@@ -447,7 +448,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             const rawLabel = (yLabel || '').toLowerCase();
 
             // Check for explicit COUNT aggregation first - ALWAYS a number
-            if (metricName.includes('count') || metricName.includes('quantity') || metricName.includes('volume') || metricName.includes('users') || metricName.includes('sessions')) {
+            if (isCountName(metricName)) {
                 effectiveFormat = 'compact'; // Use compact for counts (1.2k, 5M) or raw if small
                 if (value < 1000) effectiveFormat = 'raw';
             }
@@ -462,10 +463,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             else if (
                 (rawLabel.startsWith('%') && !rawLabel.includes('change') && !rawLabel.includes('growth') && !rawLabel.includes('vs')) ||
                 rawLabel.includes('% of') || rawLabel.includes('percent of') ||
-                /\bshare\b/.test(metricName) ||
                 /\bdiscount\b/.test(metricName) || /\bmarkdown\b/.test(metricName) ||
-                (/\brate\b/.test(metricName) && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)\s*_?\s*rate\b/.test(metricName)) ||
-                /\bconversion\b/.test(metricName) || /\bratio\b/.test(metricName)
+                isRateName(metricName)
             ) {
                 effectiveFormat = 'percent';
             }
@@ -484,7 +483,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             }
         }
 
-        const fractionDigits = formatting?.decimals !== undefined ? formatting.decimals : (isCurrencyFormat(effectiveFormat) || effectiveFormat === 'percent' ? 2 : 0);
+        // A value with decimals keeps 2 places (4.67, never "5"); whole numbers stay whole.
+        const fractionDigits = formatting?.decimals !== undefined ? formatting.decimals : (effectiveFormat === 'percent' ? 2 : decimalsFor(value));
 
         try {
             switch (effectiveFormat) {
@@ -510,8 +510,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 case 'money_plain':
                     // Money in an unknown currency: 1,234.5 — no symbol, no forced ".00".
                     return new Intl.NumberFormat('en-GB', {
-                        minimumFractionDigits: formatting?.decimals ?? 0,
-                        maximumFractionDigits: formatting?.decimals ?? (Number.isInteger(value) ? 0 : 2),
+                        minimumFractionDigits: formatting?.decimals ?? decimalsFor(value),
+                        maximumFractionDigits: formatting?.decimals ?? decimalsFor(value),
                     }).format(value);
                 case 'percent_points':
                     // Values already in percent units (12.5 = 12.5%): never rescale.
@@ -524,13 +524,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 case 'compact': {
                     // Premium compact: one decimal for large values ($1.2M, 15.3K),
                     // clean integers below 1000 — unless the user pinned a decimal count.
+                    const small = Math.abs(value) < 1000;
                     const cd = formatting?.decimals !== undefined
                         ? formatting.decimals
-                        : (Math.abs(value) >= 1000 ? 1 : 0);
+                        : (small ? decimalsFor(value) : 1);
                     return new Intl.NumberFormat('en-US', {
                         notation: 'compact',
                         compactDisplay: 'short',
-                        minimumFractionDigits: 0,
+                        minimumFractionDigits: small ? cd : 0,
                         maximumFractionDigits: cd
                     }).format(value);
                 }
@@ -564,8 +565,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // Small money amounts: no ".00" on a whole number (£50, not £50.00).
         if (isCurrency && abs < 1000) {
             return moneyFormat(primaryCurrency, {
-                minimumFractionDigits: formatting?.decimals ?? 0,
-                maximumFractionDigits: formatting?.decimals ?? (Number.isInteger(value) ? 0 : 2),
+                minimumFractionDigits: formatting?.decimals ?? decimalsFor(value),
+                maximumFractionDigits: formatting?.decimals ?? decimalsFor(value),
             }).format(value);
         }
         // Non-currency large magnitudes → compact; everything else uses the
@@ -585,10 +586,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         if (/[_ ](pct|percent|share|ratio)$/i.test(name) || /^pct[_ ]/i.test(name)) {
             fmt = 'percent';
             fd = 2;
-        } else if (name.includes('count') || name.includes('quantity') || name.includes('units') || name.includes('volume') || name.includes('orders') || name.includes('users') || name.includes('sessions')) {
+        } else if (isCountName(name)) {
             fmt = value < 1000 ? 'raw' : 'compact';
-            fd = 0;
-        } else if (name.includes('discount') || (name.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(name)) || name.includes('ratio') || name.includes('percent') || name.includes('share') || name.includes('conversion') || name.includes('margin_pct')) {
+            fd = decimalsFor(value);
+        } else if (/\bdiscount\b/.test(name) || isRateName(name)) {
             fmt = 'percent';
             fd = 2;
         } else if (name.includes('sales') || name.includes('revenue') || name.includes('price') || name.includes('cost') || name.includes('amount') || name.includes('profit') || name.includes('margin') || name.includes('billing') || name.includes('payment') || name.includes('fee') || name.includes('charge') || name.includes('salary') || name.includes('income') || name.includes('expense')) {
@@ -609,9 +610,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 fd = 2;
             } else {
                 fmt = value < 1000 ? 'raw' : 'compact';
-                fd = 0;
+                fd = decimalsFor(value);
             }
         }
+        if (formatting?.decimals !== undefined && fmt !== 'percent') fd = formatting.decimals;
         try {
             switch (fmt) {
                 case 'currency': return moneyFormat(currencyCodeFor(metricName) || primaryCurrency, { minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
@@ -655,9 +657,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 metricRef.includes('price') || metricRef.includes('cost') ||
                 metricRef.includes('amount') || metricRef.includes('profit')));
         const isPercent = activeNumberFormat === 'percent' ||
-            (!hasExplicitFormat && (metricRef.includes('percent') || (metricRef.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(metricRef)) ||
-                metricRef.includes('ratio') || metricRef.includes('share') ||
-                /\bdiscount\b/.test(metricRef) || metricRef.includes('markdown')));
+            (!hasExplicitFormat && (isRateName(metricRef) || /\bdiscount\b/.test(metricRef) || metricRef.includes('markdown')));
 
         if (activeNumberFormat === 'percent_points') {
             return `${Number(value.toFixed(1))}%`;
@@ -685,8 +685,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         if (abs >= 1e9) return `${sign}${prefix}${(abs / 1e9).toFixed(1)}B`;
         if (abs >= 1e6) return `${sign}${prefix}${(abs / 1e6).toFixed(1)}M`;
         if (abs >= 1e3) return `${sign}${prefix}${(abs / 1e3).toFixed(1)}K`;
-        if (isCurrency) return `${prefix}${value.toFixed(0)}`;
-        return value.toLocaleString();
+        if (isCurrency) return `${prefix}${value.toFixed(Number.isInteger(value) ? 0 : 2)}`;
+        return value.toLocaleString('en-GB', { minimumFractionDigits: decimalsFor(value), maximumFractionDigits: decimalsFor(value) });
     };
 
     // Prepare chart data

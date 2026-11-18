@@ -10,6 +10,7 @@
  * table called "data". This is NOT duplicating data — it's the standard way alasql
  * accesses the uploaded rows for SQL execution.
  */
+import { isRateName } from '../utils/numberKind';
 import type { Dataset } from '../types';
 import { ColumnType } from '../types';
 
@@ -258,7 +259,7 @@ export function resolveTemplate(dataset: Dataset, sqlTemplate: string): Resolved
                     (ph === '{quantity}' && (role === 'quantity' || role === 'volume' || label.includes('quantity') || label.includes('units') || label.includes('stock'))) ||
                     (ph === '{rating}' && (role === 'rating' || label.includes('rating'))) ||
                     (ph === '{score}' && (role === 'score' || label.includes('score') || label.includes('gpa'))) ||
-                    (ph === '{rate}' && (role === 'rate' || role === 'percentage' || label.includes('rate'))) ||
+                    (ph === '{rate}' && (role === 'rate' || role === 'percentage' || isRateName(label))) ||
                     // Dates
                     (ph === '{hire_date}' && (role === 'start_date' || role === 'hire_date' || label.includes('join') || label.includes('hire'))) ||
                     (ph === '{order_date}' && (role === 'transaction_date' || role === 'order_date' || role === 'event_date' || label.includes('order date') || label.includes('transaction'))) ||

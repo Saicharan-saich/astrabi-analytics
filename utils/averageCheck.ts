@@ -1,3 +1,4 @@
+import { decimalsFor } from './numberKind';
 /**
  * When an average misleads. Sales of 100, 0, 0, 0 average 25, but nobody sold
  * 25: one person sold everything. An average is honest only when values are
@@ -18,8 +19,8 @@ export interface AverageCaution {
 }
 
 export const formatAverageNumber = (value: number) => Math.abs(value) >= 1000
-    ? value.toLocaleString(undefined, { maximumFractionDigits: 0 })
-    : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    ? value.toLocaleString('en-GB', { maximumFractionDigits: 0 })
+    : value.toLocaleString('en-GB', { minimumFractionDigits: decimalsFor(value), maximumFractionDigits: decimalsFor(value) });
 
 const fmt = (value: number) => formatAverageNumber(value);
 const plural = (word: string) => word === 'person' ? 'people' : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : /(s|x|ch|sh)$/.test(word) ? `${word}es` : `${word}s`;

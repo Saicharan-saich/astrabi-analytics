@@ -1,3 +1,4 @@
+import { isRateName } from '../utils/numberKind';
 /**
  * etlHardening.ts — correctness-critical additions to the ETL pipeline.
  *
@@ -388,7 +389,7 @@ export function looksLikeLeadingZeroCode(values: any[]): boolean {
  * populations are present in force.
  */
 export function detectMixedScale(name: string, values: any[]): { ratioLike: number; pctLike: number } | null {
-    if (!/(rate|ratio|percent|pct|share|conversion|margin|discount|markdown|%)/i.test(name)) return null;
+    if (!isRateName(name) && !/\b(margin|discount|markdown)\b|(^|_)(margin|discount|markdown)(_|$)/i.test(name)) return null;
     let ratioLike = 0, pctLike = 0, seen = 0;
     for (const v of values) {
         const x = typeof v === 'number' ? v : Number(v);

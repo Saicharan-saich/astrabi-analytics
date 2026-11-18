@@ -1,3 +1,4 @@
+import { isRateName } from './numberKind';
 /**
  * Shape-based chart suggestions.
  *
@@ -75,7 +76,6 @@ const TIME_VALUE = [
     /^\d{1,2}:\d{2}$/,
 ];
 const STAGE_NAME = /(^|_|\b)(stage|step|funnel|phase|pipeline|journey)(s)?($|_|\b)/i;
-const PERCENT_NAME = /(percent|pct|ratio|rate|share|margin_pct|conversion|_%|%)/i;
 const NON_ADDITIVE_NAME = /(^|_)(avg|average|mean|median|min|max|minimum|maximum|stddev|std)(_|$)/i;
 const RATE_EXCEPTIONS = /\b(hourly|daily|weekly|monthly|annual|yearly|billing|pay|base|flat)[_ ]?rate\b/i;
 
@@ -122,7 +122,7 @@ export function profileChartShape(input: ChartShapeInput): ChartShape {
     const values = rows.map(row => Number(row?.[input.yKey])).filter(Number.isFinite);
     const aggregation = String(input.aggregation || '').toUpperCase();
     const metricName = `${input.yKey}`;
-    const isPercent = (PERCENT_NAME.test(metricName) && !RATE_EXCEPTIONS.test(metricName));
+    const isPercent = isRateName(metricName) && !RATE_EXCEPTIONS.test(metricName);
     const additive = !isPercent && !NON_ADDITIVE_NAME.test(metricName) && (aggregation === '' || aggregation === 'SUM' || aggregation === 'COUNT' || aggregation === 'COUNT_DISTINCT');
     const dimensionName = String(input.dimension || input.xKey || '').toLowerCase();
     const sampled = labels.slice(0, 40);

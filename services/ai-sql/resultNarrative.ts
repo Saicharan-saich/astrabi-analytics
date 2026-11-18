@@ -6,6 +6,7 @@ import type {
     SemanticModel,
     SemanticType,
 } from './types';
+import { isRateName } from '../../utils/numberKind';
 import { correlationInWords, friendlyNumber, plainName } from './plainLabels';
 
 interface ResultNarrativeInput {
@@ -26,7 +27,6 @@ interface ResultNarrativeInput {
 }
 
 /** A rate or share column: "no_show_rate_pct", "share_of_total". Never added up. */
-const RATE_NAME = /(rate|pct|percent|percentage|share|ratio|proportion)/i;
 /** A gap between two figures. */
 const GAP_NAME = /(^|_)(overspend|overspending|underspend|shortfall|loss|losses|variance|difference|diff|gap|deficit|surplus|over_budget|under_budget|delta)($|_)/i;
 /** A gap where above zero is bad: money lost or over budget. */
@@ -50,7 +50,7 @@ function groupName(row: Record<string, any>, dimension: string): string {
 /** What the measure is, keeping "average" (words() drops it): "average weekly sales". */
 function measureLabel(column: string, input?: { plan: AnalysisPlan }): string {
     const averaged = /^(avg|average|mean)_|_(avg|average|mean)$/i.test(column)
-        || Boolean(input?.plan.metrics.length === 1 && input.plan.metrics[0].agg === 'avg' && !/total|sum|count/i.test(column) && !RATE_NAME.test(column));
+        || Boolean(input?.plan.metrics.length === 1 && input.plan.metrics[0].agg === 'avg' && !/total|sum|count/i.test(column) && !isRateName(column));
     const base = (words(column) || 'result').replace(/\s+(pct|percent|percentage)$/i, '');
     return averaged && !/^average\b/i.test(base) ? `average ${base}` : base;
 }
@@ -283,7 +283,7 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
     const { data, profile, plan } = input;
     let metrics = profile.metricColumns.filter(column => Object.prototype.hasOwnProperty.call(data[0], column));
     // "No-show rate by neighbourhood": lead with the rate, not the count beside it.
-    const rateFirst = metrics.find(column => RATE_NAME.test(column));
+    const rateFirst = metrics.find(column => isRateName(column));
     if (rateFirst && metrics[0] !== rateFirst && (/\b(rate|share|percent|percentage|proportion|how often|likely)\b|%/i.test(input.question) || !/\b(how many|count|number of|most)\b/i.test(input.question))) {
         metrics = [rateFirst, ...metrics.filter(column => column !== rateFirst)];
     }
@@ -366,7 +366,7 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
         const averaged = /^average\b/.test(label);
         // Two groups (holiday vs not, online vs in store): say how far apart they are.
         const ranking = plan.intent === 'ranking' || /\b(?:top|highest|most|best|largest|leading)\b/i.test(input.question);
-        const isRate = type === 'percentage' || RATE_NAME.test(metric);
+        const isRate = type === 'percentage' || isRateName(metric);
         // A gap between two figures (an overspend, a shortfall, a variance): say which groups
         // are on which side of zero, never "X% higher" — a percentage of a gap means nothing.
         if (GAP_NAME.test(metric) && (ranked.length >= 2 || (ranked.length === 1 && LOSS_NAME.test(metric)))) {

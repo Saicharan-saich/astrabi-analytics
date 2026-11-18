@@ -1,5 +1,6 @@
 // --- REFACTORED: analysisEngine.ts ---
 // Re-exports from extracted modules for backward compatibility
+import { isRateName } from '../utils/numberKind';
 import { averageCaution, groupedAverageMessage } from '../utils/averageCheck';
 import { parseDelimitedText } from './delimitedText';
 export { parseDelimitedText } from './delimitedText';
@@ -741,7 +742,7 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
             const fmt = sem.format || 'raw';
 
             // Rate/Percentage columns — attendance rate, graduation rate, pass rate, etc.
-            if (!fields['rate'] && (fmt === 'percent' || lbl.includes('rate') || lbl.includes('percentage') || lbl.includes('pct') || lbl.includes('percent'))) {
+            if (!fields['rate'] && (fmt === 'percent' || isRateName(lbl))) {
                 if (sem.role === 'METRIC' || sem.role === 'UNKNOWN') fields['rate'] = colName;
             }
 
