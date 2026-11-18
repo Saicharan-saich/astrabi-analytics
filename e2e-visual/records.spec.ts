@@ -102,9 +102,9 @@ for (const theme of ['light', 'dark'] as const) {
         // Two labels (F/M) are a category in words; true/false are yes/no.
         // The column review waits under "Check the columns" (optional) instead of opening by itself.
         await page.getByRole('tab', { name: 'Columns', exact: true }).click();
-        await expect(page.getByLabel('Role of gender', { exact: true })).toHaveValue('DIMENSION');
-        await expect(page.getByLabel('Role of showed_up', { exact: true })).toHaveValue('BOOLEAN');
-        await page.getByLabel('Role of neighbourhood', { exact: true }).scrollIntoViewIfNeeded();
+        await expect(page.getByLabel('Kind of gender', { exact: true })).toHaveValue('DIMENSION');
+        await expect(page.getByLabel('Kind of showed_up', { exact: true })).toHaveValue('BOOLEAN');
+        await page.getByLabel('Kind of neighbourhood', { exact: true }).scrollIntoViewIfNeeded();
         await shoot(page, `80-records-columns-${theme}`);
 
         // ── the briefing: the latest full week against a usual one ──

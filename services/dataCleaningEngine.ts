@@ -826,7 +826,7 @@ export function generateQualityReport(
         if (completeness < 80) {
             issues.push({
                 severity: completeness < 50 ? 'critical' : 'warning',
-                message: `Column "${col}" has ${nullCount} missing values (${(100 - completeness).toFixed(1)}% null)`,
+                message: `"${col}" has ${nullCount} blank cells (${(100 - completeness).toFixed(1)}% of rows)`,
                 column: col
             });
         }
@@ -834,7 +834,7 @@ export function generateQualityReport(
         if (outlierCount > 0 && isNumeric) {
             issues.push({
                 severity: outlierCount > nonNull.length * 0.1 ? 'critical' : 'warning',
-                message: `Column "${col}" has ${outlierCount} statistical outliers`,
+                message: `"${col}" has ${outlierCount} unusually high or low values`,
                 column: col
             });
         }
@@ -842,7 +842,7 @@ export function generateQualityReport(
         if (consistency < 70 && !isNumeric) {
             issues.push({
                 severity: 'warning',
-                message: `Column "${col}" has inconsistent formatting (${consistency.toFixed(0)}% consistent)`,
+                message: `"${col}" is written in more than one format (${consistency.toFixed(0)}% in the same format)`,
                 column: col
             });
         }
@@ -850,7 +850,7 @@ export function generateQualityReport(
         if (uniqueness < 5 && nonNull.length > 100) {
             issues.push({
                 severity: 'info',
-                message: `Column "${col}" has very low cardinality (${uniqueValues.size} unique values) — good candidate for dimension/category`,
+                message: `"${col}" only has ${uniqueValues.size} different values, so it may work better as a category`,
                 column: col
             });
         }

@@ -23,6 +23,110 @@ export interface StepGuide {
 // Ordered rules — the first whose pattern matches the step name wins.
 const RULES: Array<{ test: RegExp; guide: StepGuide }> = [
     {
+        test: /^repeated header rows/i,
+        guide: { emoji: '🔁', title: 'Repeated heading rows', what: 'Removes rows that just repeat the column headings in the middle of the data.', why: 'Exports often repeat the headings on every page; those rows are not records.', ifSkipped: 'Each repeated heading counts as an extra record and breaks number columns.', example: 'A row reading "Date, Region, Revenue" halfway down' },
+    },
+    {
+        test: /^total row (removal|flag)/i,
+        guide: { emoji: '🧮', title: 'Total and subtotal rows', what: 'Finds rows that add up the rows above them ("Total", "Subtotal") rather than describe one record.', why: 'A total row repeats numbers that are already in the data.', ifSkipped: 'Every total is counted twice: revenue comes out about double.', example: '"Grand Total, 48,200" at the bottom of a sheet' },
+    },
+    {
+        test: /^order details filled/i,
+        guide: { emoji: '📋', title: 'Order details on every line', what: 'Copies an order\'s details (customer, date) from its first line to its other lines, where the file left them blank.', why: 'Each line belongs to an order; without its details it cannot be grouped by customer or date.', ifSkipped: 'Most order lines show as "Unknown" customer, and charts by customer miss most sales.', example: 'Lines 2–4 of order 1001 get the customer from line 1' },
+    },
+    {
+        test: /^sheets combined/i,
+        guide: { emoji: '📚', title: 'Sheets put back together', what: 'Joins sheets that have the same columns (one per month or region) into one table.', why: 'The sheets are parts of one table split for convenience.', ifSkipped: 'Answers only cover the first sheet.', example: 'Jan, Feb and Mar sheets become one table with every month' },
+    },
+    {
+        test: /^copied sheet/i,
+        guide: { emoji: '📑', title: 'A sheet that is a copy', what: 'Uses a sheet once when another sheet is an exact copy of it.', why: 'Two identical sheets hold the same records.', ifSkipped: 'Every record is counted twice.', example: '"Sales (2)" is identical to "Sales"' },
+    },
+    {
+        test: /^(summary|notes) sheet/i,
+        guide: { emoji: '🗒️', title: 'Summary or notes sheet set aside', what: 'Keeps a sheet of summary figures or written notes for reference, and works from the records instead.', why: 'Summary figures would add a second copy of the totals.', ifSkipped: 'Totals include the summary sheet\'s totals as well, so they come out too high.', example: 'A "Dashboard" sheet with yearly totals' },
+    },
+    {
+        test: /^(plan )?sheets kept apart/i,
+        guide: { emoji: '🗂️', title: 'Sheets kept separate', what: 'Leaves sheets with the same columns apart, because adding them together could count records twice or mix plans with actuals.', why: 'Targets and actuals, or overlapping exports, must not be added up.', ifSkipped: 'Plans would be added to real sales, or the same records counted twice.', example: '"Budget" and "Actual" sheets stay separate' },
+    },
+    {
+        test: /^report layout/i,
+        guide: { emoji: '📰', title: 'Report layout read as data', what: 'Turns section headings into a column and removes calculated lines, so a formatted report becomes a plain table.', why: 'Section headings are labels, and calculated lines repeat other lines.', ifSkipped: 'Headings show up as records and subtotals are counted twice.', example: '"North" heading → a section column with "North" on each row' },
+    },
+    {
+        test: /^unpivot period/i,
+        guide: { emoji: '↕️', title: 'Month columns turned into rows', what: 'Turns one column per period (Jan, Feb, Mar) into a period column and a value column.', why: 'Trends need one date column; side-by-side months cannot be charted over time.', ifSkipped: 'You cannot ask for a trend or filter by month.', example: 'Jan | Feb | Mar → period, value' },
+    },
+    {
+        test: /^period from year/i,
+        guide: { emoji: '📅', title: 'A date built from year and month', what: 'Builds a date from separate year and month columns when there is no date column.', why: 'Time charts and "last month" questions need a date.', ifSkipped: 'No trend charts, and time questions cannot be answered.', example: '2025 + 3 → 1 Mar 2025' },
+    },
+    {
+        test: /^mixed currency/i,
+        guide: { emoji: '💱', title: 'More than one currency in a column', what: 'Adds a currency column when one money column mixes currencies.', why: 'Pounds and dollars cannot be added together as if they were the same.', ifSkipped: 'A total adds £ and $ as one number.', example: '"£120" and "$95" in one price column' },
+    },
+    {
+        test: /^repeated order-level/i,
+        guide: { emoji: '🔂', title: 'An order amount repeated on every line', what: 'Adds a version of an order-level amount (like shipping) that counts once per order.', why: 'The file repeats the order\'s amount on each of its lines.', ifSkipped: 'An order with 4 lines has its shipping counted 4 times.', example: '£5 shipping shown on all 4 lines of one order' },
+    },
+    {
+        test: /^line cost derived/i,
+        guide: { emoji: '✖️', title: 'Line cost worked out', what: 'Adds a line cost column (quantity × unit cost) so cost and margin can be totalled.', why: 'Unit costs cannot be added up across lines with different quantities.', ifSkipped: 'Cost totals ignore how many units each line had.', example: '3 × £4.00 → £12.00' },
+    },
+    {
+        test: /^header collision/i,
+        guide: { emoji: '🏷️', title: 'Columns with the same name', what: 'Keeps both columns when two headings become the same after tidying, and numbers the second.', why: 'Two different columns must not overwrite each other.', ifSkipped: 'One column\'s values silently replace the other\'s.', example: '"Sales " and "sales" → sales, sales_2' },
+    },
+    {
+        test: /^placeholder (values|dates) removed/i,
+        guide: { emoji: '🚫', title: 'Placeholder values treated as missing', what: 'Treats stand-in values such as 999999, -1 or 1900-01-01 as missing.', why: 'Systems use these when the real value is unknown; they are not real numbers or dates.', ifSkipped: 'One 999999 makes a total millions too high, and 1900 stretches every timeline.', example: '999999 in an age column → blank' },
+    },
+    {
+        test: /^units removed/i,
+        guide: { emoji: '📏', title: 'Numbers written with units', what: 'Reads numbers written with their unit, such as "12 kg" or "5 days".', why: 'Text with a unit cannot be added up.', ifSkipped: 'Those cells are left out of totals and averages.', example: '"12 kg" → 12' },
+    },
+    {
+        test: /^percent scale/i,
+        guide: { emoji: '💯', title: 'Percentages on one scale', what: 'Puts percentages written as 0.45 and as 45 on the same scale.', why: 'Mixing the two makes averages meaningless.', ifSkipped: 'An average of 45% and 0.45% comes out around 23%.', example: '0.45 → 45 in a column of 0–100 values' },
+    },
+    {
+        test: /^durations converted/i,
+        guide: { emoji: '⏱️', title: 'Durations in one unit', what: 'Converts durations written as "1h 30m" or "01:30" into one unit.', why: 'Text durations cannot be added or averaged.', ifSkipped: 'Average handling time cannot be worked out.', example: '"1h 30m" → 90 minutes' },
+    },
+    {
+        test: /^repeated rows kept/i,
+        guide: { emoji: '👥', title: 'Repeated rows kept', what: 'Leaves rows that repeat exactly, because there is no ID to prove they are copies.', why: 'Two identical sales on one day can be real.', ifSkipped: 'Removing them could delete real records.', example: 'Two identical £4.50 coffees on the same day' },
+    },
+    {
+        test: /^line total mismatch/i,
+        guide: { emoji: '🧾', title: 'Line totals that do not add up', what: 'Finds rows where the line total is not quantity × price.', why: 'It may be a discount, or a mistake in the file.', ifSkipped: 'Revenue would quietly use whichever figure is wrong.', example: '3 × £10 but a line total of £20' },
+    },
+    {
+        test: /^revenue from price/i,
+        guide: { emoji: '🧾', title: 'Revenue worked out from price × quantity', what: 'Works out revenue as quantity × unit price when there is no revenue column.', why: 'Unit prices cannot be added up into revenue.', ifSkipped: 'Revenue questions cannot be answered.', example: '3 × £10 → £30 revenue' },
+    },
+    {
+        test: /^impossible values/i,
+        guide: { emoji: '⛔', title: 'Values that cannot be right', what: 'Finds values that cannot be true, such as a negative age or a percentage above 100.', why: 'They are almost always typing or export mistakes.', ifSkipped: 'One impossible value skews averages for the whole column.', example: 'An age of -4' },
+    },
+    {
+        test: /^kept as uploaded/i,
+        guide: { emoji: '↩️', title: 'Left as uploaded, as you chose', what: 'A step you reversed: this part of the file is used exactly as uploaded.', why: 'You know your data; the app keeps your decision every time it cleans.', ifSkipped: '—', example: '"Keep the copies" leaves duplicate rows in' },
+    },
+    {
+        test: /^totals check/i,
+        guide: { emoji: '✅', title: 'Totals match your file', what: 'Adds up every number column before and after cleaning and says if anything changed.', why: 'Cleaning must never change a total without telling you.', ifSkipped: 'A wrong removal could change your figures without anyone noticing.', example: 'Revenue: file £48,200, cleaned £48,200' },
+    },
+    {
+        test: /^blank values/i,
+        guide: { emoji: '⬜', title: 'Blank cells', what: 'Counts the blank cells in each column and how they are treated.', why: 'A blank can mean "none", "not recorded" or "not applicable", and each changes totals and averages differently.', ifSkipped: 'Blanks would be handled one fixed way, which is wrong for some columns.', example: '312 tickets with no CSAT score' },
+    },
+    {
+        test: /^blanks decision/i,
+        guide: { emoji: '⬜', title: 'Blank cells — your decision', what: 'Treats one column\'s blank cells the way you chose.', why: 'Only you know whether a blank means none, not recorded or not applicable.', ifSkipped: 'Blanks would be handled one fixed way, which is wrong for some columns.', example: 'A blank discount counted as £0' },
+    },
+    {
         test: /^format inconsistency/i,
         guide: { emoji: '🔣', title: 'Values in an unusual format', what: 'Finds the few values in a column of codes that do not follow the pattern of all the others.', why: 'One odd ID or code is usually a typing mistake, and it splits a group or breaks a join.', ifSkipped: '"ORD10007X" sits among "ORD-10006" and is counted as its own order.', example: 'Flags "ORD10007X" among 399 "ORD-#####" codes' },
     },

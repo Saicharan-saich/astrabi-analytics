@@ -67,6 +67,10 @@ export interface ETLLog {
   };
   /** Example rows a flag is about (not removed). */
   sampleRows?: Record<string, any>[];
+  /** Blank cells per column (the 'Blank Values' step). */
+  blanks?: BlankProfile[];
+  /** What each number column added up to on the rows this step removed. */
+  removedAmounts?: Record<string, number>;
 }
 
 /** A check an analyst writes once; applied on every re-run of the cleaning. */
@@ -102,6 +106,31 @@ export interface EtlOptions {
   keepMixedUnits?: boolean;
   /** Checks the analyst wrote; applied on every re-run. */
   customRules?: CleaningRule[];
+  /** Per column: what blank cells mean. Unset = leave numbers and dates blank, show categories as "Unknown". */
+  blankDecisions?: Record<string, BlankChoice>;
+}
+/** What to do with a column's blank cells. */
+export type BlankChoice = 'leave' | 'zero' | 'typical' | 'remove';
+
+/** One column's blank cells, measured before any blank decision is applied. */
+export interface BlankProfile {
+  column: string;
+  kind: 'number' | 'category' | 'date' | 'other';
+  /** Blank cells (for categories: cells the cleaning shows as `fillWord`). */
+  blanks: number;
+  /** Rows at that point of the cleaning. */
+  rows: number;
+  /** Numbers only: the filled cells, their sum and median, and how many are 0. */
+  filled?: number;
+  sum?: number;
+  median?: number;
+  zeros?: number;
+  /** Categories only: the word blanks are shown as. */
+  fillWord?: string;
+  /** What each measure adds up to on the rows where this column is blank. */
+  onBlankRows?: { column: string; amount: number }[];
+  /** The choice in force when the data was cleaned. */
+  choice: BlankChoice;
 }
 export type EtlUndoOption = keyof EtlOptions;
 /** A choice the user makes on a flagged step in the cleaning review. */

@@ -30,13 +30,13 @@ type CleaningTool = 'quality' | 'duplicates' | 'missing' | 'strings' | 'outliers
 // Static accent classes per tool (compiled Tailwind purges dynamic `bg-${x}` names,
 // so the active-tab colours must be spelled out) + a plain-English description.
 const TOOL_META: Record<CleaningTool, { active: string; icon: string; desc: string }> = {
-    quality: { active: 'bg-indigo-600 border-indigo-600 text-white', icon: 'text-indigo-500', desc: 'A health report for your data — completeness, uniqueness, consistency, and any issues found.' },
-    duplicates: { active: 'bg-rose-600 border-rose-600 text-white', icon: 'text-rose-500', desc: 'Find and remove duplicate rows so counts and totals aren’t inflated.' },
-    missing: { active: 'bg-blue-600 border-blue-600 text-white', icon: 'text-blue-500', desc: 'Fill or handle blank values in a column with a strategy you choose.' },
-    strings: { active: 'bg-purple-600 border-purple-600 text-white', icon: 'text-purple-500', desc: 'Tidy text — trim spaces, fix casing, and collapse duplicate spacing.' },
-    outliers: { active: 'bg-amber-500 border-amber-500 text-white', icon: 'text-amber-500', desc: 'Detect and handle extreme values that would distort averages and totals.' },
-    findreplace: { active: 'bg-teal-600 border-teal-600 text-white', icon: 'text-teal-500', desc: 'Search a column and replace matching values — optionally with regex.' },
-    split: { active: 'bg-orange-600 border-orange-600 text-white', icon: 'text-orange-500', desc: 'Split one column into several using a delimiter (e.g. "red;blue").' },
+    quality: { active: 'bg-indigo-600 border-indigo-600 text-white', icon: 'text-indigo-500', desc: 'How complete and tidy each column is, and anything that looks wrong.' },
+    duplicates: { active: 'bg-rose-600 border-rose-600 text-white', icon: 'text-rose-500', desc: 'Find and remove rows that are copies, so counts and totals are not counted twice.' },
+    missing: { active: 'bg-blue-600 border-blue-600 text-white', icon: 'text-blue-500', desc: 'Fill the blank cells in one column. For a choice that is kept every time the data is cleaned, and shows what it does to your totals, use Blank cells in the Checklist.' },
+    strings: { active: 'bg-purple-600 border-purple-600 text-white', icon: 'text-purple-500', desc: 'Tidy text: remove extra spaces and make capital letters consistent, so "london " and "London" count as one.' },
+    outliers: { active: 'bg-amber-500 border-amber-500 text-white', icon: 'text-amber-500', desc: 'Find unusually high or low values that would distort averages and totals, and decide what to do with them.' },
+    findreplace: { active: 'bg-teal-600 border-teal-600 text-white', icon: 'text-teal-500', desc: 'Search a column and replace matching values, optionally with a pattern.' },
+    split: { active: 'bg-orange-600 border-orange-600 text-white', icon: 'text-orange-500', desc: 'Split one column into several at a separator (e.g. "red;blue").' },
     merge: { active: 'bg-cyan-600 border-cyan-600 text-white', icon: 'text-cyan-500', desc: 'Combine several columns into one (e.g. first + last name).' },
 };
 
@@ -113,7 +113,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
     const columns = dataset?.columns || [];
     // "Good candidate for a category" is only news when the column isn't one already.
     const visibleIssues = (qualityReport?.issues || []).filter(issue => !(
-        issue.severity === 'info' && /low cardinality/i.test(issue.message)
+        issue.severity === 'info' && /may work better as a category/i.test(issue.message)
         && columns.some(c => c.name === issue.column && (c.type === ColumnType.DIMENSION || c.type === ColumnType.ID))
     ));
     const metricCols = columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
@@ -128,20 +128,20 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
 
     // ── Tool definitions ──
     const tools: { key: CleaningTool; label: string; icon: React.ReactNode; color: string }[] = [
-        { key: 'quality', label: 'Data Quality', icon: <BarChart3 className="w-4 h-4" />, color: 'indigo' },
-        { key: 'duplicates', label: 'Duplicates', icon: <Trash2 className="w-4 h-4" />, color: 'red' },
-        { key: 'missing', label: 'Missing Values', icon: <Droplets className="w-4 h-4" />, color: 'blue' },
-        { key: 'strings', label: 'Strings', icon: <Type className="w-4 h-4" />, color: 'purple' },
-        { key: 'outliers', label: 'Outliers', icon: <TrendingDown className="w-4 h-4" />, color: 'amber' },
-        { key: 'findreplace', label: 'Find/Replace', icon: <Search className="w-4 h-4" />, color: 'teal' },
-        { key: 'split', label: 'Split Column', icon: <Scissors className="w-4 h-4" />, color: 'orange' },
-        { key: 'merge', label: 'Merge Columns', icon: <Merge className="w-4 h-4" />, color: 'cyan' },
+        { key: 'quality', label: 'Health check', icon: <BarChart3 className="w-4 h-4" />, color: 'indigo' },
+        { key: 'duplicates', label: 'Copies', icon: <Trash2 className="w-4 h-4" />, color: 'red' },
+        { key: 'missing', label: 'Blank cells', icon: <Droplets className="w-4 h-4" />, color: 'blue' },
+        { key: 'strings', label: 'Tidy text', icon: <Type className="w-4 h-4" />, color: 'purple' },
+        { key: 'outliers', label: 'Unusual values', icon: <TrendingDown className="w-4 h-4" />, color: 'amber' },
+        { key: 'findreplace', label: 'Find and replace', icon: <Search className="w-4 h-4" />, color: 'teal' },
+        { key: 'split', label: 'Split a column', icon: <Scissors className="w-4 h-4" />, color: 'orange' },
+        { key: 'merge', label: 'Join columns', icon: <Merge className="w-4 h-4" />, color: 'cyan' },
     ];
 
     const selectClass = "w-full px-3 py-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all";
     const inputClass = "w-full px-3 py-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all";
     const btnPrimary = "qi-ws-button flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg";
-    const labelClass = "block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5";
+    const labelClass = "block text-[12.5px] font-semibold text-slate-600 dark:text-slate-300 mb-1.5";
 
     return (
         <div className="qi-ws-card rounded-xl overflow-hidden">
@@ -167,8 +167,8 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         })}
                     </div>
                     {qualityReport && (
-                        <div className="shrink-0 text-right" title="Average of completeness, consistency and outlier checks across columns">
-                            <div className="qi-ws-muted text-[11px]">Data quality</div>
+                        <div className="shrink-0 text-right" title="How filled in, consistently written and free of unusual values the columns are, on average">
+                            <div className="qi-ws-muted text-[11px]">Overall</div>
                             <QualityBadge score={qualityReport.overallScore} />
                         </div>
                     )}
@@ -184,7 +184,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         {/* Issues */}
                         {visibleIssues.length > 0 && (
                             <div>
-                                <h4 className="qi-ws-strong text-[13px] font-semibold mb-1">Issues found</h4>
+                                <h4 className="qi-ws-strong text-[13px] font-semibold mb-1">Worth a look</h4>
                                 <ul className="qi-ws-list">
                                     {visibleIssues.slice(0, 10).map((issue, i) => (
                                         <li key={i} className={`qi-issue is-${issue.severity} flex items-start gap-2 py-2 text-[12.5px]`}>
@@ -199,7 +199,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         )}
                         {/* Per-column quality */}
                         <div>
-                            <h4 className="qi-ws-strong text-[13px] font-semibold mb-3">Column quality</h4>
+                            <h4 className="qi-ws-strong text-[13px] font-semibold mb-3">Each column</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {qualityReport.columns.map(col => (
                                     <div key={col.column} className="qi-ws-subcard rounded-lg p-4">
@@ -208,13 +208,13 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                             <QualityBadge score={col.overallScore} />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <QualityBar value={col.completeness} label="Complete" />
-                                            <QualityBar value={Math.min(col.uniqueness, 100)} label="Unique" judged={false} />
-                                            <QualityBar value={col.consistency} label="Consistent" />
+                                            <QualityBar value={col.completeness} label="Filled in" />
+                                            <QualityBar value={Math.min(col.uniqueness, 100)} label="Different values" judged={false} />
+                                            <QualityBar value={col.consistency} label="Same format" />
                                         </div>
                                         <div className="flex gap-3 mt-2 text-[11px] text-slate-400 dark:text-slate-500">
-                                            {col.nullCount > 0 && <span>🕳️ {col.nullCount} nulls</span>}
-                                            {col.outlierCount > 0 && <span>📊 {col.outlierCount} outliers</span>}
+                                            {col.nullCount > 0 && <span>{col.nullCount} blank</span>}
+                                            {col.outlierCount > 0 && <span>{col.outlierCount} unusual</span>}
                                             <span className="ml-auto">{col.dataType}</span>
                                         </div>
                                     </div>
@@ -228,7 +228,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                 {activeTool === 'duplicates' && (
                     <div className="space-y-4">
                         <div>
-                            <label className={labelClass}>Key Columns (leave empty for exact row match)</label>
+                            <label className={labelClass}>Columns that must match (leave empty to compare whole rows)</label>
                             <div className="flex flex-wrap gap-2 mb-2">
                                 {allColNames.map(col => (
                                     <button
@@ -248,11 +248,11 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                             </div>
                         </div>
                         <div>
-                            <label className={labelClass}>Keep Strategy</label>
+                            <label className={labelClass}>Which copy to keep</label>
                             <select value={dedupKeep} onChange={e => setDedupKeep(e.target.value as DedupKeep)} className={selectClass}>
-                                <option value="first">Keep first occurrence</option>
-                                <option value="last">Keep last occurrence</option>
-                                <option value="none">Remove all duplicates</option>
+                                <option value="first">The first one</option>
+                                <option value="last">The last one</option>
+                                <option value="none">None: remove every copy, including the first</option>
                             </select>
                         </div>
                         <div className="flex gap-3">
@@ -260,24 +260,24 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                 const dupes = findDuplicates(dataset.rows, dedupColumns.length > 0 ? dedupColumns : undefined);
                                 setDedupPreview(dupes);
                             }} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-200 transition-all">
-                                <Eye className="w-4 h-4" /> Preview ({dedupPreview ? `${dedupPreview.length} groups` : '?'})
+                                <Eye className="w-4 h-4" /> Preview ({dedupPreview ? `${dedupPreview.length} sets of copies` : '?'})
                             </button>
                             <button onClick={() => {
                                 const result = removeDuplicates(dataset.rows, dedupColumns.length > 0 ? dedupColumns : undefined, dedupKeep);
                                 if (result.changes > 0) applyCleaning(result);
                                 setDedupPreview(null);
                             }} className={btnPrimary}>
-                                <Trash2 className="w-4 h-4" /> Remove Duplicates
+                                <Trash2 className="w-4 h-4" /> Remove copies
                             </button>
                         </div>
                         {dedupPreview && dedupPreview.length > 0 && (
                             <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
-                                Found <strong>{dedupPreview.length}</strong> duplicate groups ({dedupPreview.reduce((s, g) => s + g.rows.length - 1, 0)} rows to remove)
+                                Found <strong>{dedupPreview.length}</strong> sets of copies ({dedupPreview.reduce((s, g) => s + g.rows.length - 1, 0)} rows to remove)
                             </div>
                         )}
                         {dedupPreview && dedupPreview.length === 0 && (
                             <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
-                                <CheckCircle className="w-4 h-4" /> No duplicates found!
+                                <CheckCircle className="w-4 h-4" /> No copies found
                             </div>
                         )}
                     </div>
@@ -292,26 +292,26 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                 <option value="">Select column...</option>
                                 {allColNames.map(c => {
                                     const nullCount = dataset.rows.filter(r => r[c] == null || r[c] === '' || r[c] === 'null').length;
-                                    return <option key={c} value={c}>{c.replace(/_/g, ' ')} {nullCount > 0 ? `(${nullCount} missing)` : '✓'}</option>;
+                                    return <option key={c} value={c}>{c.replace(/_/g, ' ')} {nullCount > 0 ? `(${nullCount} blank)` : '✓'}</option>;
                                 })}
                             </select>
                         </div>
                         <div>
-                            <label className={labelClass}>Imputation Strategy</label>
+                            <label className={labelClass}>Fill with</label>
                             <select value={imputeStrategy} onChange={e => setImputeStrategy(e.target.value as ImputeStrategy)} className={selectClass}>
-                                <option value="mean">Mean (average)</option>
-                                <option value="median">Median (middle value)</option>
-                                <option value="mode">Mode (most common)</option>
-                                <option value="zero">Fill with 0</option>
-                                <option value="custom">Custom value</option>
-                                <option value="forward_fill">Forward fill (use previous row)</option>
-                                <option value="backward_fill">Backward fill (use next row)</option>
-                                <option value="drop_row">Drop rows with missing values</option>
+                                <option value="mean">The average</option>
+                                <option value="median">The middle value</option>
+                                <option value="mode">The most common value</option>
+                                <option value="zero">0</option>
+                                <option value="custom">A value you type</option>
+                                <option value="forward_fill">The value in the row above</option>
+                                <option value="backward_fill">The value in the row below</option>
+                                <option value="drop_row">Nothing: remove these rows instead</option>
                             </select>
                         </div>
                         {imputeStrategy === 'custom' && (
                             <div>
-                                <label className={labelClass}>Custom Fill Value</label>
+                                <label className={labelClass}>Value to fill in</label>
                                 <input value={imputeCustomValue} onChange={e => setImputeCustomValue(e.target.value)} className={inputClass} placeholder="Enter value..." />
                             </div>
                         )}
@@ -324,7 +324,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                             }}
                             className={`${btnPrimary} ${!imputeColumn ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                            <Droplets className="w-4 h-4" /> Fill Missing Values
+                            <Droplets className="w-4 h-4" /> Fill blank cells
                         </button>
                     </div>
                 )}
@@ -342,7 +342,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         <div className="flex flex-wrap gap-3">
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input type="checkbox" checked={normTrim} onChange={e => setNormTrim(e.target.checked)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-                                <span className="text-sm text-slate-700">Trim whitespace</span>
+                                <span className="text-sm text-slate-700">Remove spaces at the start and end</span>
                             </label>
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input type="checkbox" checked={normDedup} onChange={e => setNormDedup(e.target.checked)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
@@ -350,7 +350,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                             </label>
                         </div>
                         <div>
-                            <label className={labelClass}>Case Standardization</label>
+                            <label className={labelClass}>Capital letters</label>
                             <select value={normCase} onChange={e => setNormCase(e.target.value as CaseMode | '')} className={selectClass}>
                                 <option value="">No change</option>
                                 <option value="lower">lowercase</option>
@@ -372,7 +372,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                             }}
                             className={`${btnPrimary} ${!normColumn ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                            <Type className="w-4 h-4" /> Normalize Strings
+                            <Type className="w-4 h-4" /> Tidy text
                         </button>
                     </div>
                 )}
@@ -381,7 +381,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                 {activeTool === 'outliers' && (
                     <div className="space-y-4">
                         <div>
-                            <label className={labelClass}>Numeric Column</label>
+                            <label className={labelClass}>Number column</label>
                             <select value={outlierColumn} onChange={e => setOutlierColumn(e.target.value)} className={selectClass}>
                                 <option value="">Select column...</option>
                                 {metricCols.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
@@ -389,35 +389,35 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             <div>
-                                <label className={labelClass}>Method</label>
+                                <label className={labelClass}>How to spot them</label>
                                 <select value={outlierMethod} onChange={e => setOutlierMethod(e.target.value as OutlierMethod)} className={selectClass}>
-                                    <option value="iqr">IQR (Interquartile Range)</option>
-                                    <option value="zscore">Z-Score (Standard Deviations)</option>
+                                    <option value="iqr">Far outside the middle half of values (recommended)</option>
+                                    <option value="zscore">Far from the average</option>
                                 </select>
                             </div>
                             <div>
-                                <label className={labelClass}>Threshold</label>
+                                <label className={labelClass}>How far counts as unusual</label>
                                 <input type="number" step="0.1" min="0.5" max="5" value={outlierThreshold} onChange={e => setOutlierThreshold(Number(e.target.value))} className={inputClass} />
                             </div>
                         </div>
                         <div>
-                            <label className={labelClass}>Action</label>
+                            <label className={labelClass}>What to do with them</label>
                             <select value={outlierAction} onChange={e => setOutlierAction(e.target.value as OutlierAction)} className={selectClass}>
-                                <option value="cap">Cap/Winsorize (clamp to bounds)</option>
-                                <option value="remove">Remove outlier rows</option>
-                                <option value="nullify">Set to null</option>
-                                <option value="flag">Flag with new column</option>
+                                <option value="cap">Bring them into the usual range</option>
+                                <option value="remove">Remove these rows</option>
+                                <option value="nullify">Make them blank</option>
+                                <option value="flag">Mark them in a new column</option>
                             </select>
                         </div>
                         {outlierColumn && (() => {
                             const det = detectOutliers(dataset.rows, outlierColumn, outlierMethod, outlierThreshold);
                             return det.outlierCount > 0 ? (
                                 <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-300">
-                                    Found <strong>{det.outlierCount}</strong> outliers in "{outlierColumn}" — bounds: [{det.lowerBound.toFixed(2)}, {det.upperBound.toFixed(2)}]
+                                    Found <strong>{det.outlierCount}</strong> unusual values in "{outlierColumn.replace(/_/g, ' ')}". The usual range is {det.lowerBound.toFixed(2)} to {det.upperBound.toFixed(2)}.
                                 </div>
                             ) : (
                                 <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4" /> No outliers detected
+                                    <CheckCircle className="w-4 h-4" /> No unusual values
                                 </div>
                             );
                         })()}
@@ -430,7 +430,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                             }}
                             className={`${btnPrimary} ${!outlierColumn ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                            <TrendingDown className="w-4 h-4" /> Handle Outliers
+                            <TrendingDown className="w-4 h-4" /> Apply
                         </button>
                     </div>
                 )}
@@ -451,14 +451,14 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                 <input value={frFind} onChange={e => setFrFind(e.target.value)} className={inputClass} placeholder="Text to find..." />
                             </div>
                             <div>
-                                <label className={labelClass}>Replace With</label>
+                                <label className={labelClass}>Replace with</label>
                                 <input value={frReplace} onChange={e => setFrReplace(e.target.value)} className={inputClass} placeholder="Replacement text..." />
                             </div>
                         </div>
                         <div className="flex gap-4">
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input type="checkbox" checked={frRegex} onChange={e => setFrRegex(e.target.checked)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-                                <span className="text-sm text-slate-700">Use Regex</span>
+                                <span className="text-sm text-slate-700">Use a pattern (advanced)</span>
                             </label>
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input type="checkbox" checked={frCaseSensitive} onChange={e => setFrCaseSensitive(e.target.checked)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
@@ -483,21 +483,21 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                 {activeTool === 'split' && (
                     <div className="space-y-4">
                         <div>
-                            <label className={labelClass}>Column to Split</label>
+                            <label className={labelClass}>Column to split</label>
                             <select value={splitCol} onChange={e => setSplitCol(e.target.value)} className={selectClass}>
                                 <option value="">Select column...</option>
                                 {dimCols.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className={labelClass}>Delimiter</label>
+                            <label className={labelClass}>Split at</label>
                             <select value={splitDelimiter} onChange={e => setSplitDelimiter(e.target.value)} className={selectClass}>
                                 <option value=",">Comma (,)</option>
                                 <option value=" ">Space ( )</option>
                                 <option value="-">Dash (-)</option>
                                 <option value="_">Underscore (_)</option>
                                 <option value="/">Slash (/)</option>
-                                <option value="|">Pipe (|)</option>
+                                <option value="|">Vertical bar (|)</option>
                             </select>
                         </div>
                         <button
@@ -518,7 +518,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                 {activeTool === 'merge' && (
                     <div className="space-y-4">
                         <div>
-                            <label className={labelClass}>Columns to Merge (select 2+)</label>
+                            <label className={labelClass}>Columns to join (pick 2 or more)</label>
                             <div className="flex flex-wrap gap-2 mb-2">
                                 {allColNames.map(col => (
                                     <button
@@ -539,17 +539,17 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             <div>
-                                <label className={labelClass}>New Column Name</label>
+                                <label className={labelClass}>Name of the new column</label>
                                 <input value={mergeNewName} onChange={e => setMergeNewName(e.target.value)} className={inputClass} placeholder="e.g. full_name" />
                             </div>
                             <div>
-                                <label className={labelClass}>Separator</label>
+                                <label className={labelClass}>Put between them</label>
                                 <select value={mergeSeparator} onChange={e => setMergeSeparator(e.target.value)} className={selectClass}>
                                     <option value=" ">Space</option>
-                                    <option value=", ">Comma + Space</option>
+                                    <option value=", ">Comma and space</option>
                                     <option value="-">Dash</option>
                                     <option value="_">Underscore</option>
-                                    <option value="">None</option>
+                                    <option value="">Nothing</option>
                                 </select>
                             </div>
                         </div>
@@ -571,7 +571,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
             {/* ── Cleaning Log ── */}
             {cleaningLogs.length > 0 && (
                 <div className="border-t border-slate-100 dark:border-white/10 px-6 py-4 bg-slate-50/50 dark:bg-white/[0.02]">
-                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Cleaning History ({cleaningLogs.length} operations)</h4>
+                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Your edits ({cleaningLogs.length})</h4>
                     <div className="space-y-1.5 max-h-40 overflow-y-auto">
                         {cleaningLogs.map((log, i) => (
                             <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900/50 px-3 py-2 rounded-lg border border-slate-100 dark:border-white/10">

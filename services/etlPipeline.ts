@@ -19,6 +19,7 @@ import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, EtlOptions, PhysicalD
 import { generateDimDate } from './dimDateGenerator';
 import { checkTotals, describeTotals } from './totalsCheck';
 import { convertMixedUnits, runQualityChecks } from './etlQualityChecks';
+import { amountsIn, applyBlankDecisions, profileBlanks } from './blankValues';
 import {
     parseLocaleNumber, hasCurrencyMarker, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
     buildCanonicalCategoryMap, findNearDuplicateGroups, pivotTwoDigitYear,
@@ -788,7 +789,7 @@ function layer1_structuralNormalization(
         rows = keptRows;
         const removed = before - rows.length;
         if (removed > 0) {
-            logs.push(log('Empty Row Removal', 1, 'applied', `Removed ${removed} empty row(s).`, { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: emptyRows }));
+            logs.push(log('Empty Row Removal', 1, 'applied', `Removed ${removed} empty row(s).`, { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: emptyRows, removedAmounts: amountsIn(emptyRows) }));
         } else {
             logs.push(log('Empty Row Removal', 1, 'skipped', 'No empty rows.'));
         }
@@ -842,7 +843,7 @@ function layer1_structuralNormalization(
             rows = t.rows;
             logs.push(log('Total Row Removal', 1, 'applied',
                 `Removed ${t.removed.length} total/subtotal row(s) — their figures equal the rows they total, so keeping them would double-count.`,
-                { rowsBefore: rows.length + t.removed.length, rowsAfter: rows.length, removedRowSamples: t.removed.slice(0, 10), revert: { option: 'keepTotalRows', value: true, label: 'Keep these rows' } }));
+                { rowsBefore: rows.length + t.removed.length, rowsAfter: rows.length, removedRowSamples: t.removed.slice(0, 10), removedAmounts: amountsIn(t.removed), revert: { option: 'keepTotalRows', value: true, label: 'Keep these rows' } }));
         }
         if (t.suspicious.length > 0) {
             logs.push(log('Total Row Flag', 6, 'info',
@@ -909,7 +910,7 @@ function layer1_structuralNormalization(
         if (duplicatesRemoved > 0) {
             logs.push(log('Duplicate Row Removal', 1, 'applied',
                 `Removed ${duplicatesRemoved} exact duplicate row(s). '${d.keyColumn}' is unique once copies are removed, so the repeats were re-exported copies.`,
-                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: d.removed.slice(0, 10), affectedColumns: d.keyColumn ? [d.keyColumn] : [], revert: { option: 'keepDuplicateRows', value: true, label: 'Keep the copies' } }));
+                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: d.removed.slice(0, 10), removedAmounts: amountsIn(d.removed), affectedColumns: d.keyColumn ? [d.keyColumn] : [], revert: { option: 'keepDuplicateRows', value: true, label: 'Keep the copies' } }));
         } else {
             logs.push(log('Duplicate Row Removal', 1, 'skipped', d.keyColumn
                 ? `No duplicate rows ('${d.keyColumn}' is unique).`
@@ -1918,7 +1919,7 @@ function layer5b_hardening(
             rows = rows.filter(row => !isOutlier(row[c.name]));
             logs.push(log('Outlier Removal', 6, 'applied',
                 `Column '${c.name}': removed ${removed.length} row(s) with values outside the usual range ${range}, as you chose.`,
-                { affectedColumns: [c.name], rowsBefore: before, rowsAfter: rows.length, removedRowSamples: removed.slice(0, 10), revert: { ...undo, label: 'Put these rows back' } }));
+                { affectedColumns: [c.name], rowsBefore: before, rowsAfter: rows.length, removedRowSamples: removed.slice(0, 10), removedAmounts: amountsIn(removed), revert: { ...undo, label: 'Put these rows back' } }));
         } else if (choice === 'cap') {
             const samples: { column: string; before: unknown; after: unknown }[] = [];
             let changed = 0;
@@ -2387,6 +2388,20 @@ export function runETLPipeline(
                 totalsCheck: check.measures.map(m => ({ column: m.column, uploaded: m.uploaded, cleaned: m.cleaned, blanked: m.blanked.cells, changed: m.changed.cells })),
             }));
         }
+    }
+
+    // ── LAYER 5d: Blank cells — measured per column, then the person's choice applied ──
+    {
+        const profiles = profileBlanks(rows, finalColumns, etlOptions.blankDecisions);
+        const blankCells = profiles.reduce((s, p) => s + p.blanks, 0);
+        allLogs.push(log('Blank Values', 5, profiles.length ? 'info' : 'skipped',
+            profiles.length
+                ? `${blankCells} blank cell(s) in ${profiles.length} column(s): ${profiles.slice(0, 4).map(p => `'${p.column}' ${p.blanks}`).join(', ')}${profiles.length > 4 ? ', …' : ''}.`
+                : 'No blank cells.',
+            { blanks: profiles, affectedColumns: profiles.map(p => p.column) }));
+        const decided = applyBlankDecisions(rows, profiles, etlOptions.blankDecisions);
+        rows = decided.rows;
+        allLogs.push(...decided.logs);
     }
 
     // ── LAYER 6: Data Contract Validation ──

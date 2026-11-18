@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { NoDataYet } from './NoDataYet';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Columns3, Compass, Database, Download, MessageCircleQuestion, Upload, Zap } from 'lucide-react';
+import { ChevronDown, ChevronRight, Columns3, Compass, Download, MessageCircleQuestion, Upload, Zap } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions, Tab } from '../types';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
-import { CleaningChangesPanel } from './CleaningChangesPanel';
+import { DataReadyChecklist, ReadySummary } from './DataReadyChecklist';
 import { DataKindNote } from './DataKindNote';
 import { WeeklyBriefingCard } from './WeeklyBriefingCard';
 import { ColumnQuestionsCard } from './ColumnQuestionsCard';
@@ -19,6 +19,9 @@ import { ColumnMappingWizard } from './ColumnMappingWizard';
 type DatasetWorkspaceSection = 'overview' | 'explore' | 'cleaned' | 'studio' | 'mapping' | 'schema';
 type View = 'overview' | 'data' | 'columns' | 'cleaning' | 'relationships';
 type CleaningMode = 'log' | 'fix';
+
+/** What each kind of column is for, in plain words. */
+const KIND_HELP = 'Numbers are added up and averaged. Categories group and filter. Dates drive trends. Identifiers are counted, never added up.';
 
 interface DatasetSummaryViewProps {
     dataset: Dataset | null;
@@ -54,7 +57,7 @@ const viewFor = (section: DatasetWorkspaceSection): View =>
                 : section === 'schema' ? 'relationships'
                     : 'overview';
 
-const ROLE_LABEL: Record<string, string> = { METRIC: 'Measure', DIMENSION: 'Dimension', DATE: 'Date', ID: 'ID', BOOLEAN: 'Yes/No' };
+const ROLE_LABEL: Record<string, string> = { METRIC: 'Number', DIMENSION: 'Category', DATE: 'Date', ID: 'Identifier', BOOLEAN: 'Yes/No' };
 const roleLabel = (type: string) => ROLE_LABEL[type] || type.charAt(0) + type.slice(1).toLowerCase();
 
 interface ColumnStats {
@@ -156,8 +159,8 @@ const ColumnRow: React.FC<{ stat: ColumnStats }> = ({ stat }) => {
                     <td />
                     <td colSpan={5} className="pb-4 pr-4">
                         {stat.type === 'METRIC' && (
-                            <dl className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                                {[['Min', stat.min], ['Max', stat.max], ['Sum', stat.sum], ['Average', stat.mean], ['Median', stat.median], ['Std dev', stat.stdDev]].map(([label, value]) => (
+                            <dl className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                                {[['Lowest', stat.min], ['Highest', stat.max], ['Total', stat.sum], ['Average', stat.mean], ['Middle value', stat.median]].map(([label, value]) => (
                                     <div key={label as string}>
                                         <dt className="qi-ws-muted text-[11px]">{label}</dt>
                                         <dd className="qi-ws-strong text-[13px] font-semibold tabular-nums">{formatNum(value as number)}</dd>
@@ -194,15 +197,15 @@ const ColumnTypesTable: React.FC<{ dataset: Dataset; onSchemaOverride?: (columnN
     <div className="qi-ws-card rounded-xl overflow-hidden">
         <div className="px-4 py-3">
             <h3 className="qi-ws-strong text-[14px] font-semibold">Column types</h3>
-            <p className="qi-ws-muted text-[12.5px] mt-0.5">Change a role and the data is re-read with it. Measures are added up; dimensions group and filter.</p>
+            <p className="qi-ws-muted text-[12.5px] mt-0.5">Change a kind and the data is re-read with it. {KIND_HELP}</p>
         </div>
         <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
                 <thead>
                     <tr className="qi-ws-thead">
                         <th className="py-2 pl-4 pr-3 text-left">Column</th>
-                        <th className="py-2 pr-3 text-left">Role</th>
-                        <th className="py-2 pr-3 text-left">Stored as</th>
+                        <th className="py-2 pr-3 text-left">Kind</th>
+                        <th className="py-2 pr-3 text-left">In the file → used as</th>
                         <th className="py-2 pr-4 text-right">Read correctly</th>
                     </tr>
                 </thead>
@@ -219,7 +222,7 @@ const ColumnTypesTable: React.FC<{ dataset: Dataset; onSchemaOverride?: (columnN
                                         disabled={!onSchemaOverride}
                                         onChange={e => onSchemaOverride?.(column.name, e.target.value as ColumnType)}
                                         className="qi-ws-select rounded-md px-2 py-1 text-[12.5px]"
-                                        aria-label={`Role of ${column.name}`}
+                                        aria-label={`Kind of ${column.name}`}
                                     >
                                         {(['METRIC', 'DIMENSION', 'DATE', 'ID'] as const).map(t => <option key={t} value={t}>{roleLabel(t)}</option>)}
                                     </select>
@@ -277,6 +280,8 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
 }) => {
     const [view, setView] = useState<View>(viewFor(initialSection));
     const [cleaningMode, setCleaningMode] = useState<CleaningMode>(initialSection === 'studio' ? 'fix' : 'log');
+    /** The full step-by-step list, for anyone who wants every detail. */
+    const [showSteps, setShowSteps] = useState(false);
     // Opening the workspace from another route (e.g. after upload) selects that view.
     useEffect(() => {
         setView(viewFor(initialSection));
@@ -297,8 +302,8 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
         const nullCells = columnStats.reduce((s, c) => s + c.nullCount, 0);
         const uploaded = dataset.etlLogs?.find(l => l.step === 'Final Summary')?.rowsBefore;
         const roles = [
-            [count('METRIC'), 'measure', 'measures'], [count('DIMENSION'), 'dimension', 'dimensions'],
-            [count('DATE'), 'date', 'dates'], [count('ID'), 'ID', 'IDs'],
+            [count('METRIC'), 'number', 'numbers'], [count('DIMENSION'), 'category', 'categories'],
+            [count('DATE'), 'date', 'dates'], [count('ID'), 'identifier', 'identifiers'],
         ].filter(([n]) => (n as number) > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`).join(' · ');
         return { rows, uploaded, cols: dataset.columns.length, roles, completeness: totalCells > 0 ? ((totalCells - nullCells) / totalCells) * 100 : 100 };
     }, [dataset, columnStats]);
@@ -371,22 +376,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                 <div className="mt-6 space-y-5">
                     {view === 'overview' && facts && (
                         <>
-                            {(() => {
-                                // Every upload checks that cleaning kept each measure's total (services/totalsCheck.ts).
-                                const totals = dataset.etlLogs?.find(l => l.step === 'Totals Check');
-                                if (!totals) return null;
-                                const ok = totals.status === 'applied';
-                                return (
-                                    <div className={`qi-totals ${ok ? 'is-ok' : 'is-warn'}`} role={ok ? 'status' : 'alert'}>
-                                        {ok ? <CheckCircle2 className="h-4 w-4" aria-hidden /> : <AlertTriangle className="h-4 w-4" aria-hidden />}
-                                        <div>
-                                            <strong>{ok ? 'Totals match your file' : 'Some totals differ from your file'}</strong>
-                                            <p>{ok ? totals.details.replace(/^Every total matches the file: /, '') : totals.details}</p>
-                                            {!ok && <button type="button" className="qi-totals-link" onClick={() => setView('cleaning')}>See what cleaning changed</button>}
-                                        </div>
-                                    </div>
-                                );
-                            })()}
+                            <ReadySummary dataset={dataset} onOpen={() => { setCleaningMode('log'); setView('cleaning'); }} />
                             <nav className="qi-next" aria-label="What to do next">
                                 <p className="qi-next-label">What would you like to do next?</p>
                                 <div className="qi-next-grid">
@@ -425,8 +415,6 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
 
                             <WeeklyBriefingCard dataset={dataset} onAsk={onAskAiSql} />
 
-                            <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} onReclean={onEtlReclean} />
-
                             <DataKindNote dataset={dataset} />
 
                             <dl className="qi-ws-card qi-ws-facts rounded-xl grid grid-cols-2 md:grid-cols-4">
@@ -462,8 +450,11 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
 
                             <section className="qi-ws-card rounded-xl overflow-hidden">
                                 <div className="flex items-baseline justify-between px-4 py-3">
-                                    <h3 className="qi-ws-strong text-[14px] font-semibold">Columns</h3>
-                                    <button type="button" onClick={() => setView('columns')} className="qi-ws-link text-[12.5px] font-semibold">Change types</button>
+                                    <div>
+                                        <h3 className="qi-ws-strong text-[14px] font-semibold">Columns</h3>
+                                        <p className="qi-ws-muted text-[12px] mt-0.5">{KIND_HELP}</p>
+                                    </div>
+                                    <button type="button" onClick={() => setView('columns')} className="qi-ws-link text-[12.5px] font-semibold shrink-0">Change kinds</button>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-[13px]">
@@ -471,9 +462,9 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                                             <tr className="qi-ws-thead">
                                                 <th className="py-2 pl-4 pr-2" />
                                                 <th className="py-2 pr-3 text-left">Name</th>
-                                                <th className="py-2 pr-3 text-left">Role</th>
-                                                <th className="py-2 pr-3 text-left">Filled</th>
-                                                <th className="py-2 pr-3 text-left hidden sm:table-cell">Distinct</th>
+                                                <th className="py-2 pr-3 text-left">Kind</th>
+                                                <th className="py-2 pr-3 text-left">Filled in</th>
+                                                <th className="py-2 pr-3 text-left hidden sm:table-cell">Different values</th>
                                                 <th className="py-2 pr-4 text-left hidden md:table-cell">What's in it</th>
                                             </tr>
                                         </thead>
@@ -523,18 +514,30 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                         <>
                             <div className="flex flex-wrap items-center gap-3">
                                 <div className="qi-ws-segmented inline-flex rounded-lg p-0.5" role="group" aria-label="Cleaning">
-                                    <button type="button" aria-pressed={cleaningMode === 'log'} onClick={() => setCleaningMode('log')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'log' ? 'is-active' : ''}`}>What was done</button>
-                                    <button type="button" aria-pressed={cleaningMode === 'fix'} onClick={() => setCleaningMode('fix')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'fix' ? 'is-active' : ''}`}>Fix by hand</button>
+                                    <button type="button" aria-pressed={cleaningMode === 'log'} onClick={() => setCleaningMode('log')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'log' ? 'is-active' : ''}`}>Checklist</button>
+                                    <button type="button" aria-pressed={cleaningMode === 'fix'} onClick={() => setCleaningMode('fix')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'fix' ? 'is-active' : ''}`}>Edit by hand</button>
                                 </div>
                                 <p className="qi-ws-muted text-[12.5px]">
-                                    {cleaningMode === 'log' ? 'Every automatic step, with the reason for it. Open a step for samples.' : 'Remove duplicates, fill blanks, fix text, split or merge columns.'}
+                                    {cleaningMode === 'log' ? 'What was checked and fixed, why, and the decisions only you can make.' : 'Remove copies, fill blanks, tidy text, split or join columns yourself.'}
                                 </p>
                             </div>
                             {cleaningMode === 'log' ? (
                                 <>
-                                    <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} onReclean={onEtlReclean} persistent />
+                                    <DataReadyChecklist
+                                        dataset={dataset}
+                                        onApply={onApplyCleaningDecisions}
+                                        onRevert={onEtlRevert}
+                                        onReclean={onEtlReclean}
+                                        pending={etlRevertPending}
+                                        onShowEveryCheck={() => setShowSteps(v => !v)}
+                                    />
                                     <CleaningRulesPanel dataset={dataset} onApply={onApplyCleaningDecisions} busy={Boolean(etlRevertPending)} />
-                                    <ETLView dataset={dataset} onSchemaOverride={onSchemaOverride} onRowsRecovered={onRowsRecovered} onDataCleaned={onDataCleaned} onApplyDecisions={onApplyCleaningDecisions} applying={etlRevertPending === '__review__'} busy={Boolean(etlRevertPending)} />
+                                    {showSteps && (
+                                        <section aria-label="Every check, step by step" className="space-y-2">
+                                            <h3 className="qi-ws-strong text-[14px] font-semibold">Every check, step by step</h3>
+                                            <ETLView dataset={dataset} onSchemaOverride={onSchemaOverride} onRowsRecovered={onRowsRecovered} onDataCleaned={onDataCleaned} onApplyDecisions={onApplyCleaningDecisions} applying={etlRevertPending === '__review__'} busy={Boolean(etlRevertPending)} />
+                                        </section>
+                                    )}
                                 </>
                             ) : (
                                 <DataCleaningPanel dataset={dataset} onDataCleaned={(rows, entry) => onDataCleaned?.(rows, entry)} />

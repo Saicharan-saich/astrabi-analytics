@@ -38,18 +38,18 @@ const SEMANTIC_ROLES = [
 ];
 
 const ROLE_DISPLAY: Record<string, { icon: string; label: string; color: string }> = {
-    primary_metric: { icon: '📊', label: 'Primary Metric', color: 'text-emerald-400' },
-    secondary_metric: { icon: '📈', label: 'Secondary Metric', color: 'text-teal-400' },
-    primary_dimension: { icon: '🏷️', label: 'Primary Dimension', color: 'text-violet-400' },
-    secondary_dimension: { icon: '🏷️', label: 'Secondary Dimension', color: 'text-purple-400' },
-    primary_date: { icon: '📅', label: 'Primary Date', color: 'text-blue-400' },
-    secondary_date: { icon: '📅', label: 'Secondary Date', color: 'text-sky-400' },
-    identifier: { icon: '🔑', label: 'Identifier', color: 'text-amber-400' },
-    attribute: { icon: '📋', label: 'Attribute', color: 'text-gray-400' },
+    primary_metric: { icon: '📊', label: 'The main number', color: 'text-emerald-400' },
+    secondary_metric: { icon: '📈', label: 'Another number', color: 'text-teal-400' },
+    primary_dimension: { icon: '🏷️', label: 'The main way to group', color: 'text-violet-400' },
+    secondary_dimension: { icon: '🏷️', label: 'Another way to group', color: 'text-purple-400' },
+    primary_date: { icon: '📅', label: 'The main date (for trends)', color: 'text-blue-400' },
+    secondary_date: { icon: '📅', label: 'Another date', color: 'text-sky-400' },
+    identifier: { icon: '🔑', label: 'An identifier', color: 'text-amber-400' },
+    attribute: { icon: '📋', label: 'Extra detail', color: 'text-gray-400' },
     other: { icon: '📋', label: 'Other', color: 'text-gray-500' },
 };
 
-const AGG_WORD: Record<string, string> = { SUM: 'Sum', AVG: 'Average', COUNT: 'Count', COUNT_DISTINCT: 'Count distinct', MIN: 'Minimum', MAX: 'Maximum' };
+const AGG_WORD: Record<string, string> = { SUM: 'Add up (total)', AVG: 'Average', COUNT: 'Count', COUNT_DISTINCT: 'Count different values', MIN: 'Lowest', MAX: 'Highest' };
 const FORMAT_WORD: Record<string, string> = { currency_usd: 'US dollars', currency_eur: 'Euros', percent: 'Percent', raw: 'Plain number', count: 'Count', date_iso: 'Date' };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -106,15 +106,15 @@ function validateMapping(
 
     // ── HARD ERRORS (block apply) ──
     if (metrics.length === 0) {
-        errors.push({ id: 'no_metric', message: 'At least 1 metric column is required. What will be measured?', severity: 'error' });
+        errors.push({ id: 'no_metric', message: 'Mark at least one column as a Number: what should be added up or averaged?', severity: 'error' });
     }
     if (dimensions.length === 0) {
-        errors.push({ id: 'no_dimension', message: 'At least 1 dimension column is required. What will values be grouped by?', severity: 'error' });
+        errors.push({ id: 'no_dimension', message: 'Mark at least one column as a Category: what should numbers be grouped by?', severity: 'error' });
     }
     // Check METRIC aggregation
     for (const [name, sem] of metrics) {
         if (sem.aggregation === 'NONE') {
-            errors.push({ id: `agg_${name}`, message: `"${name}" is a metric but has no aggregation. Select SUM, AVG, COUNT, etc.`, severity: 'error' });
+            errors.push({ id: `agg_${name}`, message: `"${name}" is a number: choose how to add it up (total, average, count…).`, severity: 'error' });
         }
     }
 
@@ -122,7 +122,7 @@ function validateMapping(
     if (dates.length > 0) {
         const hasPrimaryDate = dates.some(([, s]) => s.semanticRole === 'primary_date');
         if (!hasPrimaryDate) {
-            errors.push({ id: 'no_primary_date', message: 'Date columns detected but none marked as Primary Date. Consider setting one.', severity: 'warning' });
+            errors.push({ id: 'no_primary_date', message: 'There are dates, but none is marked as the main date for trends. Consider setting one.', severity: 'warning' });
         }
     }
 
@@ -327,19 +327,21 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
 
     const toCheck = columns.filter(col => (columnConfidences[col.name] ?? 0) < 0.45 || (columnSemantics[col.name] && needsWord(col.name, columnSemantics[col.name])));
     const lookRight = columns.length - toCheck.length;
-    const ROLE_WORD: Record<string, string> = { METRIC: 'Measure', DIMENSION: 'Dimension', DATE: 'Date', BOOLEAN: 'Yes/No', ID: 'ID', UNKNOWN: 'Unknown' };
-    const FILTER_WORD: Record<string, string> = { METRIC: 'Measures', DIMENSION: 'Dimensions', DATE: 'Dates', BOOLEAN: 'Yes/No', ID: 'IDs' };
+    const ROLE_WORD: Record<string, string> = { METRIC: 'Number', DIMENSION: 'Category', DATE: 'Date', BOOLEAN: 'Yes/No', ID: 'Identifier', UNKNOWN: 'Unknown' };
+    const FILTER_WORD: Record<string, string> = { METRIC: 'Numbers', DIMENSION: 'Categories', DATE: 'Dates', BOOLEAN: 'Yes/No', ID: 'Identifiers' };
+    /** How sure the app is about a column, in words. */
+    const SURE_WORD: Record<string, string> = { High: 'Sure', Medium: 'Fairly sure', Low: 'Please check' };
 
     return (
         <div className="qi-map h-full flex flex-col overflow-hidden">
             {/* ── Header ── */}
             <div className="qi-ws-toolbar flex-shrink-0 px-5 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                    <h3 className="qi-ws-strong text-[15px] font-semibold">Review column mapping</h3>
+                    <h3 className="qi-ws-strong text-[15px] font-semibold">What each column is</h3>
                     <p className="qi-ws-muted text-[12.5px] mt-0.5 truncate">
                         {isAIProfiling
                             ? 'Working out what each column means…'
-                            : 'Check what each column is. Measures are added up; dimensions group and filter; dates drive trends.'}
+                            : 'Numbers are added up and averaged. Categories group and filter. Dates drive trends. Identifiers are counted, never added up.'}
                     </p>
                 </div>
                 <button type="button" onClick={resetToAI} className="qi-ws-ghost inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold" title="Undo your edits and go back to the detected mapping">
@@ -359,7 +361,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                     {/* Summary: subject · how many columns look right */}
                     <div className="qi-ws-subcard qi-ws-facts rounded-lg grid grid-cols-1 md:grid-cols-2">
                         <div className="px-4 py-3">
-                            <label className="qi-ws-muted text-[12px] block" htmlFor="qi-map-domain">Subject</label>
+                            <label className="qi-ws-muted text-[12px] block" htmlFor="qi-map-domain">What this data is about</label>
                             <select id="qi-map-domain" value={domain} onChange={e => setDomain(e.target.value)} className="qi-ws-select mt-1 w-full rounded-md px-2.5 py-1.5 text-[13px]">
                                 {ALL_DOMAINS.map(d => <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>)}
                             </select>
@@ -380,7 +382,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                     {toCheck.slice(0, 8).map(col => (
                                         <li key={col.name}>
                                             <button type="button" className="qi-ws-link" onClick={() => { setSearchFilter(col.name); setTypeFilter('ALL'); setExpandedCol(col.name); }}>{col.name}</button>
-                                            <span className="qi-ws-muted"> — {columnSemantics[col.name] && needsWord(col.name, columnSemantics[col.name]) ? 'say what it means' : columnSemantics[col.name]?.role === ColumnType.ID ? 'may not be an ID' : 'unusual name; confirm its role'}</span>
+                                            <span className="qi-ws-muted"> — {columnSemantics[col.name] && needsWord(col.name, columnSemantics[col.name]) ? 'say what it means' : columnSemantics[col.name]?.role === ColumnType.ID ? 'may not be an identifier' : 'unusual name; confirm what it is'}</span>
                                         </li>
                                     ))}
                                     {toCheck.length > 8 && <li className="qi-ws-muted">and {toCheck.length - 8} more</li>}
@@ -407,7 +409,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             <Search className="qi-ws-muted w-4 h-4 shrink-0" />
                             <input type="text" value={searchFilter} onChange={e => setSearchFilter(e.target.value)} placeholder="Search columns" className="bg-transparent outline-none text-[13px] flex-1 min-w-0" aria-label="Search columns" />
                         </label>
-                        <div className="qi-ws-segmented inline-flex flex-wrap rounded-lg p-0.5" role="group" aria-label="Show columns by role">
+                        <div className="qi-ws-segmented inline-flex flex-wrap rounded-lg p-0.5" role="group" aria-label="Show columns by kind">
                             <button type="button" aria-pressed={typeFilter === 'ALL'} onClick={() => setTypeFilter('ALL')} className={`px-2.5 py-1 rounded-md text-[12px] font-semibold ${typeFilter === 'ALL' ? 'is-active' : ''}`}>
                                 All <span className="qi-ws-count">{columns.length}</span>
                             </button>
@@ -430,9 +432,9 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                     <div className="qi-ws-subcard rounded-lg overflow-hidden">
                         <div className="qi-ws-thead grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_3rem] gap-3 px-4 py-2 text-[11.5px] font-semibold">
                             <span>Column</span>
-                            <span>Role</span>
-                            <span>Combine by</span>
-                            <span>Confidence</span>
+                            <span>Kind</span>
+                            <span>Add up as</span>
+                            <span>Our guess</span>
                             <span className="text-center">Show</span>
                         </div>
                         <div className="qi-ws-list">
@@ -470,7 +472,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                     });
                                                 }}
                                                 className="qi-ws-select w-full rounded-md px-2 py-1 text-[12.5px]"
-                                                aria-label={`Role of ${col.name}`}
+                                                aria-label={`Kind of ${col.name}`}
                                             >
                                                 {COLUMN_TYPES.map(t => <option key={t} value={t}>{ROLE_WORD[t] || t}</option>)}
                                             </select>
@@ -480,12 +482,12 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                     onClick={e => e.stopPropagation()}
                                                     onChange={e => updateColumn(col.name, { aggregation: e.target.value as any })}
                                                     className={`qi-ws-select w-full rounded-md px-2 py-1 text-[12.5px] ${hasAggError ? 'is-error' : ''}`}
-                                                    aria-label={`How to combine ${col.name}`}
+                                                    aria-label={`How to add up ${col.name}`}
                                                 >
                                                     {AGGREGATIONS.filter(a => a !== 'NONE').map(a => <option key={a} value={a}>{AGG_WORD[a] || a}</option>)}
                                                 </select>
                                             ) : <span className="qi-ws-muted text-[12px]">—</span>}
-                                            <span className={`qi-conf is-${confInfo.label.toLowerCase()} text-[12px]`}>{confInfo.label}</span>
+                                            <span className={`qi-conf is-${confInfo.label.toLowerCase()} text-[12px]`}>{SURE_WORD[confInfo.label] || confInfo.label}</span>
                                             <div className="text-center">
                                                 <button
                                                     type="button"
@@ -500,19 +502,18 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                         </div>
                                         {isExpanded && (
                                             <div className="qi-ws-detail px-4 pb-4 pt-2 pl-10">
-                                                <dl className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[12px] mb-3">
-                                                    <div><dt className="qi-ws-muted">Uploaded as</dt><dd className="font-mono">{col.conversion?.sourceType || col.originalType || 'unknown'}</dd></div>
-                                                    <div><dt className="qi-ws-muted">Stored as</dt><dd className="font-mono">{col.physicalType || 'unknown'}</dd></div>
-                                                    <div><dt className="qi-ws-muted">Read as</dt><dd className="font-mono">{col.conversion?.normalizedType || 'not checked'}</dd></div>
-                                                    <div><dt className="qi-ws-muted">Read correctly</dt><dd className={(col.conversion?.invalidCount || 0) > 0 ? 'qi-ws-warn' : ''}>{col.conversion ? `${Math.round(col.conversion.parseSuccessRate * 100)}%${col.conversion.invalidCount ? ` · ${col.conversion.invalidCount} not read` : ''}` : '—'}</dd></div>
-                                                </dl>
+                                                <p className="text-[12px] mb-3">
+                                                    <span className="qi-ws-muted">Read correctly from your file: </span>
+                                                    <span className={(col.conversion?.invalidCount || 0) > 0 ? 'qi-ws-warn' : 'qi-ws-strong'}>{col.conversion ? `${Math.round(col.conversion.parseSuccessRate * 100)}% of values${col.conversion.invalidCount ? ` · ${col.conversion.invalidCount} could not be read` : ''}` : 'not checked'}</span>
+                                                    <span className="qi-ws-muted" title={`In the file: ${col.conversion?.sourceType || col.originalType || 'unknown'} · stored as: ${col.physicalType || 'unknown'} · read as: ${col.conversion?.normalizedType || 'not checked'}`}> ⓘ</span>
+                                                </p>
                                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Importance</span>
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">How it is used</span>
                                                         <select value={sem.semanticRole || 'other'} onChange={e => updateColumn(col.name, { semanticRole: e.target.value })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]">
                                                             {SEMANTIC_ROLES.map(r => <option key={r} value={r}>{ROLE_DISPLAY[r]?.label || r}</option>)}
                                                         </select>
                                                     </label>
-                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Format</span>
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Show as</span>
                                                         <select value={sem.format} onChange={e => updateColumn(col.name, { format: e.target.value as any })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]">
                                                             {FORMATS.map(f => <option key={f} value={f}>{FORMAT_WORD[f] || f}</option>)}
                                                         </select>
@@ -565,8 +566,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                         </button>
                         {showPreview && (
                             <div className="px-4 pb-4 space-y-2 text-[12.5px]">
-                                <p><span className="qi-ws-muted">Measures: </span>{previewData.metricList.join(', ') || <span className="qi-ws-warn">none — at least one is needed</span>}</p>
-                                <p><span className="qi-ws-muted">Dimensions: </span>{previewData.dimensionList.join(', ') || <span className="qi-ws-warn">none — at least one is needed</span>}</p>
+                                <p><span className="qi-ws-muted">Numbers: </span>{previewData.metricList.join(', ') || <span className="qi-ws-warn">none — at least one is needed</span>}</p>
+                                <p><span className="qi-ws-muted">Categories: </span>{previewData.dimensionList.join(', ') || <span className="qi-ws-warn">none — at least one is needed</span>}</p>
                                 {previewData.dateList.length > 0 && <p><span className="qi-ws-muted">Dates: </span>{previewData.dateList.join(', ')}</p>}
                                 {previewData.sampleQuestion && <p><span className="qi-ws-muted">A question that will work: </span><span className="qi-ws-strong">“{previewData.sampleQuestion}”</span></p>}
                             </div>
@@ -588,7 +589,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                     disabled={showErrors && !canApply}
                     className="qi-ws-button inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <CheckCircle2 className="w-4 h-4" /> Apply & Continue
+                    <CheckCircle2 className="w-4 h-4" /> Save and continue
                 </button>
             </div>
         </div>

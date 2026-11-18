@@ -31,7 +31,7 @@ export function buildReviewOptions(current: EtlOptions, decisions: Record<string
                 const removed = ((current.customRules || []).map(rule => rule.id)).filter(id => !kept.has(id));
                 const remaining = (next.customRules || []).filter(rule => !removed.includes(rule.id));
                 set(option, remaining.length ? remaining : null);
-            } else if (option === 'outlierDecisions' || option === 'typoDecisions' || option === 'flagDecisions') {
+            } else if (option === 'outlierDecisions' || option === 'typoDecisions' || option === 'flagDecisions' || option === 'blankDecisions') {
                 const column = Object.keys((current as any)[option] || {}).find(name => !(value && Object.prototype.hasOwnProperty.call(value, name)));
                 const remaining = { ...((next as any)[option] || {}) };
                 if (column) delete remaining[column];

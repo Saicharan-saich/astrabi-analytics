@@ -62,7 +62,7 @@ for (const theme of ['light', 'dark'] as const) {
 
         // ── what each column means: editable, used for every question ──
         await page.getByRole('tab', { name: 'Columns', exact: true }).click();
-        await page.getByLabel('Role of revenue', { exact: true }).waitFor({ timeout: 15000 });
+        await page.getByLabel('Kind of revenue', { exact: true }).waitFor({ timeout: 15000 });
         await page.locator('p', { hasText: /^revenue$/ }).first().click();
         const higher = page.getByLabel('Is a higher revenue better or worse', { exact: true });
         await expect(higher).toBeVisible();

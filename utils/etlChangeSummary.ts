@@ -88,6 +88,12 @@ const RULES: Record<string, Rule> = {
     'Typo Merge': { kind: 'converted', title: (_l, n, c) => `Merged likely typos in '${c}' (${plural(n ?? 0, 'cell')}, your choice)` },
     'Typo Review': { kind: 'kept', title: (_l, _n, c) => `Similar values in '${c}' kept as different (your choice)` },
 
+    'Blanks Decision': {
+        kind: 'converted',
+        title: (l, n, c) => l.rowsBefore !== undefined && l.rowsAfter !== undefined
+            ? `Left out ${plural(Math.max(0, l.rowsBefore - l.rowsAfter), 'row')} with no '${c}' (your choice)`
+            : /counted as 0/.test(l.details) ? `Counted ${plural(n ?? 0, 'blank')} in '${c}' as 0 (your choice)` : `Filled ${plural(n ?? 0, 'blank')} in '${c}' with the typical value (your choice)`,
+    },
     'Kept As Uploaded': { kind: 'kept', title: l => keptTitle(l) },
 };
 

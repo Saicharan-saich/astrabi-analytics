@@ -50,7 +50,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
             <div className="flex items-center justify-center h-full">
                 <div className="text-center py-20 max-w-md">
                     <Layers className="w-16 h-16 text-slate-600 mx-auto mb-4 opacity-30" />
-                    <h3 className="text-lg font-semibold text-slate-400">No Source Schema Available</h3>
+                    <h3 className="text-lg font-semibold text-slate-400">No linked tables to show</h3>
                     <p className="text-sm text-slate-500 mt-2">
                         Schema information is available when you import multiple tables from a SQL database connector.
                         The application automatically detects relationships and builds a star schema.
@@ -235,7 +235,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                                 <span>Normalized</span>
                                                 <span>Role</span>
                                                 <span>Quality</span>
-                                                <span>Nullable</span>
+                                                <span>Can be blank</span>
                                             </div>
                                             {table.columns.map((col, i) => (
                                                 <div key={i} className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-4 px-4 py-2 text-xs border-t border-slate-700/50 items-center hover:bg-slate-700/20 transition-colors">
@@ -250,7 +250,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                                     <span className={`font-mono text-[11px] ${(col.invalidCount || 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                                                         {col.parseSuccessRate == null ? '—' : `${Math.round(col.parseSuccessRate * 100)}%`}
                                                     </span>
-                                                    <span className="text-center">{col.isNullable ? <span className="text-slate-500 text-[11px]">YES</span> : <span className="text-amber-400 text-[11px] font-bold">NOT NULL</span>}</span>
+                                                    <span className="text-center">{col.isNullable ? <span className="text-slate-500 text-[11px]">Yes</span> : <span className="text-amber-400 text-[11px] font-bold">Never blank</span>}</span>
                                                 </div>
                                             ))}
                                         </div>
