@@ -297,16 +297,16 @@ for (const theme of ['light', 'dark'] as const) {
         }
         await nav.click();
         await page.getByRole('button', { name: 'Review and decide' }).first().click();
-        const panel = page.locator('.qi-ready:visible').first();
+        const panel = page.locator('.qi-chk:visible').first();
         await panel.waitFor({ timeout: 10000 });
         await panel.getByRole('button', { name: /Removed 19 duplicate rows/ }).first().click().catch(() => {});
         await page.waitForTimeout(600);
         await panel.screenshot({ path: path.join(OUT, `52-older-cleaning-${theme}.png`) });
         await panel.getByRole('button', { name: /Clean it again/ }).click();
-        await page.locator('.qi-ready-older').waitFor({ state: 'detached', timeout: 30000 }).catch(() => {});
+        await page.locator('.qi-chk-older').waitFor({ state: 'detached', timeout: 30000 }).catch(() => {});
         await page.waitForTimeout(1500);
         await shoot(page, `52-older-cleaning-after-${theme}`);
-        expect(await page.locator('.qi-ready-older').count()).toBe(0);
+        expect(await page.locator('.qi-chk-older').count()).toBe(0);
     });
 
     test(`workspaces ${theme}`, async ({ page }) => {
@@ -377,7 +377,7 @@ for (const theme of ['light', 'dark'] as const) {
             // The overview's one-line status opens the checklist.
             await page.getByRole('button', { name: 'Review and decide' }).first().click().catch(() => {});
             await page.waitForTimeout(800);
-            const checklist = page.locator('.qi-ready:visible').first();
+            const checklist = page.locator('.qi-chk:visible').first();
             if (await checklist.isVisible().catch(() => false)) {
                 // Open a fixed item: why it was done, what goes wrong without it, the measured amount.
                 await checklist.getByRole('button', { name: /Removed 3 duplicate rows/ }).click().catch(() => {});
@@ -404,7 +404,7 @@ for (const theme of ['light', 'dark'] as const) {
                     await page.getByRole('radio', { name: /Count a blank as 0/ }).first().check(quick).catch(() => {});
                     await page.waitForTimeout(400);
                     await page.screenshot({ path: path.join(OUT, `55-cleaning-review-${theme}.png`), fullPage: true });
-                    await page.locator('.qi-ready-item.is-blank').first().screenshot({ path: path.join(OUT, `55-blank-choice-${theme}.png`), ...quick }).catch(() => {});
+                    await page.locator('.qi-chk-item.is-blank').first().screenshot({ path: path.join(OUT, `55-blank-choice-${theme}.png`), ...quick }).catch(() => {});
                     await page.locator('.qi-review-bar').first().screenshot({ path: path.join(OUT, `55-cleaning-review-bar-${theme}.png`), ...quick }).catch(() => {});
                     await page.getByRole('button', { name: 'Apply changes' }).first().click(quick).catch(() => {});
                     await page.waitForTimeout(5000);

@@ -54,7 +54,7 @@ const QualityBar: React.FC<{ value: number; label: string; judged?: boolean }> =
     const color = !judged ? 'bg-slate-400 dark:bg-slate-500' : value >= 90 ? 'bg-emerald-500' : value >= 70 ? 'bg-amber-500' : 'bg-red-500';
     return (
         <div className="flex items-center gap-2">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 w-20 shrink-0">{label}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 w-[6.5rem] shrink-0">{label}</span>
             <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
                 <div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${value}%` }} />
             </div>

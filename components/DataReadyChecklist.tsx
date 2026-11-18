@@ -42,7 +42,7 @@ function Samples({ rows, highlight }: { rows: Record<string, any>[]; highlight?:
     const keys = Object.keys(rows[0] || {}).filter(k => !k.startsWith('__')).slice(0, SAMPLE_COLUMNS);
     if (!keys.length) return null;
     return (
-        <div className="qi-ready-samples">
+        <div className="qi-chk-samples">
             <table>
                 <thead><tr>{keys.map(k => <th key={k} className={highlight?.includes(k) ? 'is-hit' : ''}>{k.replace(/_/g, ' ')}</th>)}</tr></thead>
                 <tbody>
@@ -58,7 +58,7 @@ function Samples({ rows, highlight }: { rows: Record<string, any>[]; highlight?:
 /** Why / without / measured impact, the same three lines everywhere. */
 function Reasons({ item }: { item: Pick<ReadyItem, 'why' | 'without' | 'impact'> }) {
     return (
-        <dl className="qi-ready-reasons">
+        <dl className="qi-chk-reasons">
             <div><dt>Why it matters</dt><dd>{item.why}</dd></div>
             {item.without && <div><dt>Without it</dt><dd>{item.without}</dd></div>}
             {item.impact && <div><dt>In your data</dt><dd>{item.impact}</dd></div>}
@@ -81,16 +81,16 @@ function decisionFor(item: ReadyItem, choiceId: string): StepDecision | null {
 function DecisionItem({ item, picked, onPick }: { item: ReadyItem; picked?: string; onPick: (choice: string) => void }) {
     const [open, setOpen] = useState(false);
     return (
-        <li className="qi-ready-item is-decide">
-            <div className="qi-ready-item-head">
-                <AlertCircle className="qi-ready-icon is-attention" aria-hidden />
+        <li className="qi-chk-item is-decide">
+            <div className="qi-chk-item-head">
+                <AlertCircle className="qi-chk-icon is-attention" aria-hidden />
                 <div className="min-w-0 flex-1">
                     <h4>{item.title}</h4>
-                    <p className="qi-ready-what">{item.what}</p>
+                    <p className="qi-chk-what">{item.what}</p>
                 </div>
             </div>
             <Reasons item={item} />
-            <fieldset className="qi-ready-choices">
+            <fieldset className="qi-chk-choices">
                 <legend>What should happen?</legend>
                 {item.choices!.map(choice => (
                     <label key={choice.id} className={picked === choice.id ? 'is-picked' : ''}>
@@ -101,7 +101,7 @@ function DecisionItem({ item, picked, onPick }: { item: ReadyItem; picked?: stri
             </fieldset>
             {item.samples && item.samples.length > 0 && (
                 <>
-                    <button type="button" className="qi-ready-more" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+                    <button type="button" className="qi-chk-more" aria-expanded={open} onClick={() => setOpen(v => !v)}>
                         <ChevronDown className={`h-3.5 w-3.5 ${open ? 'rotate-180' : ''}`} aria-hidden /> {open ? 'Hide examples' : 'Show examples'}
                     </button>
                     {open && <Samples rows={item.samples} highlight={item.decision ? [item.decision.column] : undefined} />}
@@ -114,28 +114,28 @@ function DecisionItem({ item, picked, onPick }: { item: ReadyItem; picked?: stri
 function BlankItem({ card, picked, onPick }: { card: BlankCard; picked: BlankChoice; onPick: (choice: BlankChoice) => void }) {
     const recommended = card.options.find(o => o.recommended);
     return (
-        <li className="qi-ready-item is-blank">
-            <div className="qi-ready-item-head">
-                <CircleDashed className="qi-ready-icon" aria-hidden />
+        <li className="qi-chk-item is-blank">
+            <div className="qi-chk-item-head">
+                <CircleDashed className="qi-chk-icon" aria-hidden />
                 <div className="min-w-0 flex-1">
                     <h4>{card.headline}</h4>
-                    <p className="qi-ready-what">{card.why}</p>
+                    <p className="qi-chk-what">{card.why}</p>
                 </div>
             </div>
-            <fieldset className="qi-ready-choices">
+            <fieldset className="qi-chk-choices">
                 <legend>What does a blank mean here?</legend>
                 {card.options.map(option => (
                     <label key={option.choice} className={picked === option.choice ? 'is-picked' : ''}>
                         <input type="radio" name={`blank-${card.column}`} checked={picked === option.choice} onChange={() => onPick(option.choice)} />
                         <span>
-                            <strong>{option.label}{option.recommended && <b className="qi-ready-rec">Recommended</b>}</strong>
-                            <span className="qi-ready-result">{option.result}</span>
+                            <strong>{option.label}{option.recommended && <b className="qi-chk-rec">Recommended</b>}</strong>
+                            <span className="qi-chk-result">{option.result}</span>
                             <em>{option.effect}</em>
                         </span>
                     </label>
                 ))}
             </fieldset>
-            {recommended && <p className="qi-ready-because"><Info className="h-3.5 w-3.5" aria-hidden /> {card.because}</p>}
+            {recommended && <p className="qi-chk-because"><Info className="h-3.5 w-3.5" aria-hidden /> {card.because}</p>}
         </li>
     );
 }
@@ -143,25 +143,25 @@ function BlankItem({ card, picked, onPick }: { card: BlankCard; picked: BlankCho
 function DoneItem({ item, onRevert, busy, pending }: { item: ReadyItem; onRevert?: Props['onRevert']; busy: boolean; pending: boolean }) {
     const [open, setOpen] = useState(false);
     return (
-        <li className="qi-ready-row">
-            <button type="button" className="qi-ready-row-main" aria-expanded={open} onClick={() => setOpen(v => !v)}>
-                <ChevronDown className={`qi-ready-chev h-3.5 w-3.5 ${open ? 'rotate-180' : ''}`} aria-hidden />
+        <li className="qi-chk-row">
+            <button type="button" className="qi-chk-row-main" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+                <ChevronDown className={`qi-chk-chev h-3.5 w-3.5 ${open ? 'rotate-180' : ''}`} aria-hidden />
                 <span className="min-w-0">
                     <strong>{item.title}</strong>
-                    <span className="qi-ready-why-line">{item.why}</span>
+                    {!open && <span className="qi-chk-why-line">{item.why}</span>}
                 </span>
             </button>
             {item.revert && onRevert && (
-                <button type="button" className="qi-ready-undo" disabled={busy} onClick={() => onRevert(item.revert!)}>
+                <button type="button" className="qi-chk-undo" disabled={busy} onClick={() => onRevert(item.revert!)}>
                     {pending ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Undo2 className="h-3 w-3" aria-hidden />} {item.revert.label}
                 </button>
             )}
             {open && (
-                <div className="qi-ready-row-body">
-                    <p className="qi-ready-what">{item.what}</p>
+                <div className="qi-chk-row-body">
+                    <p className="qi-chk-what">{item.what}</p>
                     <Reasons item={item} />
                     {item.samples && item.samples.length > 0 && <Samples rows={item.samples} />}
-                    <p className="qi-ready-tech">{item.technical}</p>
+                    <p className="qi-chk-tech">{item.technical}</p>
                 </div>
             )}
         </li>
@@ -215,8 +215,8 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
     const shownBlanks = allBlanks ? ready.blanks : ready.blanks.slice(0, BLANKS_SHOWN);
 
     return (
-        <section className="qi-ready" aria-label="Is your data ready?">
-            <header className={`qi-ready-head ${toDecide ? 'is-attention' : 'is-ok'}`}>
+        <section className="qi-chk" aria-label="Is your data ready?">
+            <header className={`qi-chk-head ${toDecide ? 'is-attention' : 'is-ok'}`}>
                 {toDecide ? <AlertCircle className="h-5 w-5" aria-hidden /> : <CheckCircle2 className="h-5 w-5" aria-hidden />}
                 <div className="min-w-0">
                     <h3>{verdict}</h3>
@@ -224,7 +224,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
                         {rowsLine}{' '}
                         {ready.totals ? (ready.totals.ok ? 'Every total matches your file.' : 'Some totals differ from your file; the reason is below.') : ''}
                     </p>
-                    <ul className="qi-ready-tally" aria-label="Summary">
+                    <ul className="qi-chk-tally" aria-label="Summary">
                         <li><CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> {ready.fixed.length} fixed for you</li>
                         {toDecide > 0 && <li className="is-attention"><AlertCircle className="h-3.5 w-3.5" aria-hidden /> {toDecide} to decide</li>}
                         {ready.blanks.length > 0 && <li><CircleDashed className="h-3.5 w-3.5" aria-hidden /> {ready.blanks.length} column{ready.blanks.length === 1 ? '' : 's'} with blanks</li>}
@@ -233,14 +233,14 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
             </header>
 
             {older.stale && (
-                <div className="qi-ready-older" role="status">
+                <div className="qi-chk-older" role="status">
                     <p>
                         <strong>This data was cleaned by an earlier version of QuickInsight.</strong>{' '}
                         {older.blankKeyDuplicates > 0 ? `That version removed ${older.blankKeyDuplicates} rows as duplicates only because their ID was blank. ` : ''}
                         {onReclean ? 'Clean it again with the current checks: your original upload is kept, and every change gets an undo.' : 'Upload the file again to clean it with the current checks.'}
                     </p>
                     {onReclean && (
-                        <button type="button" className="qi-ready-undo" onClick={onReclean} disabled={busy}>
+                        <button type="button" className="qi-chk-undo" onClick={onReclean} disabled={busy}>
                             {pending === '__reclean__' ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden />}
                             {pending === '__reclean__' ? 'Cleaning again…' : 'Clean it again'}
                         </button>
@@ -256,10 +256,10 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
             )}
 
             {toDecide > 0 && (
-                <div className="qi-ready-group">
-                    <h3 className="qi-ready-group-title">Needs your decision</h3>
-                    <p className="qi-ready-group-sub">Only you know your data well enough to decide these. Nothing changes until you apply.</p>
-                    <ul className="qi-ready-list">
+                <div className="qi-chk-group">
+                    <h3 className="qi-chk-group-title">Needs your decision</h3>
+                    <p className="qi-chk-group-sub">Only you know your data well enough to decide these. Nothing changes until you apply.</p>
+                    <ul className="qi-chk-list">
                         {ready.needsYou.map(item => (
                             <DecisionItem
                                 key={item.id}
@@ -277,16 +277,16 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
             )}
 
             {ready.blanks.length > 0 && (
-                <div className="qi-ready-group">
-                    <h3 className="qi-ready-group-title">Blank cells</h3>
-                    <p className="qi-ready-group-sub">A blank can mean "none", "not recorded" or "does not apply". Each choice shows the numbers you would get.</p>
-                    <ul className="qi-ready-list">
+                <div className="qi-chk-group">
+                    <h3 className="qi-chk-group-title">Blank cells</h3>
+                    <p className="qi-chk-group-sub">A blank can mean "none", "not recorded" or "does not apply". Each choice shows the numbers you would get.</p>
+                    <ul className="qi-chk-list">
                         {shownBlanks.map(card => (
                             <BlankItem key={card.column} card={card} picked={blankPicks[card.column] || card.current} onPick={choice => setBlankPicks(prev => ({ ...prev, [card.column]: choice }))} />
                         ))}
                     </ul>
                     {ready.blanks.length > BLANKS_SHOWN && (
-                        <button type="button" className="qi-ready-more" onClick={() => setAllBlanks(v => !v)}>
+                        <button type="button" className="qi-chk-more" onClick={() => setAllBlanks(v => !v)}>
                             <ChevronDown className={`h-3.5 w-3.5 ${allBlanks ? 'rotate-180' : ''}`} aria-hidden />
                             {allBlanks ? 'Show fewer' : `Show ${ready.blanks.length - BLANKS_SHOWN} more column${ready.blanks.length - BLANKS_SHOWN === 1 ? '' : 's'} with blanks`}
                         </button>
@@ -295,26 +295,26 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
             )}
 
             {ready.fixed.length > 0 && (
-                <div className="qi-ready-group">
-                    <h3 className="qi-ready-group-title">Fixed for you</h3>
-                    <p className="qi-ready-group-sub">Open any item to see why it was done and what would go wrong without it.</p>
-                    <ul className="qi-ready-rows">
+                <div className="qi-chk-group">
+                    <h3 className="qi-chk-group-title">Fixed for you</h3>
+                    <p className="qi-chk-group-sub">Open any item to see why it was done and what would go wrong without it.</p>
+                    <ul className="qi-chk-rows">
                         {ready.fixed.map(item => <DoneItem key={item.id} item={item} onRevert={onRevert} busy={busy} pending={pending === item.revert?.option} />)}
                     </ul>
                 </div>
             )}
 
             {ready.goodToKnow.length > 0 && (
-                <div className="qi-ready-group">
-                    <h3 className="qi-ready-group-title">Good to know</h3>
-                    <p className="qi-ready-group-sub">Noticed and left as they are.</p>
-                    <ul className="qi-ready-rows">
+                <div className="qi-chk-group">
+                    <h3 className="qi-chk-group-title">Good to know</h3>
+                    <p className="qi-chk-group-sub">Noticed and left as they are.</p>
+                    <ul className="qi-chk-rows">
                         {ready.goodToKnow.map(item => <DoneItem key={item.id} item={item} onRevert={onRevert} busy={busy} pending={pending === item.revert?.option} />)}
                     </ul>
                 </div>
             )}
 
-            <p className="qi-ready-quiet">
+            <p className="qi-chk-quiet">
                 {ready.quiet > 0 ? `${ready.quiet} other check${ready.quiet === 1 ? '' : 's'} found nothing to fix.` : ''}
                 {onShowEveryCheck && <button type="button" className="qi-ws-link font-semibold" onClick={onShowEveryCheck}>See every check, step by step</button>}
             </p>
