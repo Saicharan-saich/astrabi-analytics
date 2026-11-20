@@ -83,7 +83,8 @@ for (const theme of ['light', 'dark'] as const) {
         await addStep(page, 'Group values');
         await form.getByLabel('Column').selectOption('region');
         await form.getByRole('button', { name: /^N\. West/ }).click();
-        await form.getByRole('button', { name: /^NW/ }).click();
+        // The automatic cleaning already wrote 'NW' out as 'Northwest'.
+        await form.getByRole('button', { name: /^Northwest/ }).click();
         await form.getByLabel('Count them as').fill('North West');
         await expect(form.locator('.qi-steps-effect')).toContainText('cells grouped');
         await form.getByRole('button', { name: 'Add step' }).click();
@@ -99,7 +100,7 @@ for (const theme of ['light', 'dark'] as const) {
         const list = page.locator('.qi-steps-list');
         await expect(list).toContainText("Remove rows where 'customer' contains 'test'");
         await expect(list).toContainText("Why: The client's QA team places test orders");
-        await expect(list).toContainText("In 'region', count 'N. West', 'NW' as 'North West'");
+        await expect(list).toContainText("In 'region', count 'N. West', 'Northwest' as 'North West'");
         await expect(list).toContainText("New column 'Profit' = 'revenue' − 'cost'");
         await expect(page.locator('.qi-steps-preview')).toContainText('45 rows');
         await expect(page.locator('.qi-steps-grid th').filter({ hasText: 'profit' })).toHaveCount(1);
