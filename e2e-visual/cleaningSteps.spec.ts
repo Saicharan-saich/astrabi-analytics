@@ -49,6 +49,11 @@ async function addStep(page: Page, kind: string) {
     await page.locator('.qi-steps-form').waitFor();
 }
 
+// On a failure, keep a picture of where it stopped.
+test.afterEach(async ({ page }, info) => {
+    if (info.status !== info.expectedStatus) await page.screenshot({ path: path.join(OUT, `zz-failed-steps-${info.title.includes('dark') ? 'dark' : 'light'}.png`), fullPage: true }).catch(() => {});
+});
+
 for (const theme of ['light', 'dark'] as const) {
     test(`your steps: clean by hand, apply, save, replay on the next file (${theme})`, async ({ page }) => {
         test.setTimeout(240_000);

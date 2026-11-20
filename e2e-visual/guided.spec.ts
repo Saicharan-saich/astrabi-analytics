@@ -256,7 +256,7 @@ for (const theme of ['light', 'dark'] as const) {
         await ready.getByRole('button', { name: 'Close' }).click();
         // Every upload checks that cleaning kept each total.
         await go(page, 'Dataset Workspace');
-        await expect(page.locator('.qi-totals')).toContainText('Totals match your file');
+        await expect(page.locator('.qi-totals').first()).toContainText(/every total matches your file/i);
         await shoot(page, `78-totals-check-${theme}`);
         await go(page, 'AI SQL');
         const box = page.getByLabel('Ask a question about your data');

@@ -2475,7 +2475,8 @@ export function runETLPipeline(
     // (row for row with the source); a column a step made or changed keeps what applies.
     const profiledBase = new Map(attachConversionProfiles(finalColumns, preTransformRows, rowsBeforeSteps).map(c => [c.name, c] as const));
     const profiledColumns = attachCurrencies(
-        stepColumns.map(c => { const p = profiledBase.get(c.name); return p ? { ...p, type: c.type, physicalType: c.physicalType ?? p.physicalType } : c; }),
+        // Unchanged by the steps → exactly as measured; a step changed its kind → the step's kind.
+        stepColumns.map(c => { const p = profiledBase.get(c.name); return !p ? c : c.type === p.type ? p : { ...p, type: c.type, physicalType: c.physicalType }; }),
         Object.keys(rawData[0] || {}),
         preTransformRows,
     );
