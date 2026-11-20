@@ -120,7 +120,7 @@ export const CleaningSetupCard: React.FC<Props> = ({ dataset, onApplySetup, onCl
                     <div className="min-w-0 flex-1">
                         <h3>{applied.savedHere ? `Saved as the setup '${applied.name}'` : `Cleaned with your saved setup '${applied.name}'`}</h3>
                         <p>
-                            {setup ? describeSetup(setup) : 'This setup has since been deleted.'}{' '}
+                            {setup ? `${describeSetup(setup)}.` : 'This setup has since been deleted.'}{' '}
                             {applied.savedHere
                                 ? 'The next file with these columns will be cleaned the same way, automatically.'
                                 : applied.match === 'exact' ? 'This file has the same columns as the one it was made for.' : 'Most of this file\'s columns match the one it was made for.'}

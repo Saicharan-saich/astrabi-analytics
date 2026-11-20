@@ -5839,7 +5839,7 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-setup-head p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
 .qi-setup-changes { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg-hover); font-size: 12.5px; }
 .qi-setup-changes strong { color: var(--text-primary); }
-.qi-setup-changes ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; color: var(--text-secondary); }
+.qi-setup-changes ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; list-style: disc; color: var(--text-secondary); }
 .qi-setup-changes li.is-serious { color: #b45309; }
 :root.dark .qi-setup-changes li.is-serious { color: #fbc66b; }
 .qi-setup-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
