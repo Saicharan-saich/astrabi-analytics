@@ -112,7 +112,8 @@ export function buildReadiness(dataset: Pick<Dataset, 'etlLogs' | 'columns'>): R
             kind: item.kind,
             title: item.title,
             what: guide.what,
-            why: guide.why,
+            // The person's own steps carry their own reason, written when they added it.
+            why: log.step === 'Your Step' ? (log.reason || guide.why) : guide.why,
             without: guide.ifSkipped && guide.ifSkipped !== '—' ? guide.ifSkipped : '',
             impact: impactOf(log, measures, currencyOf),
             revert: log.revert,

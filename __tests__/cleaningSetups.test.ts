@@ -93,6 +93,16 @@ describe('saved cleaning setups', () => {
         expect(changes[1].text).toMatch(/choices for it were skipped/);
     });
 
+    it('reports a step of the setup that the new file could not run', () => {
+        const setup = buildSetup(cleaned(monthFile(1)), 'Acme');
+        const record = appliedSetup(setup, 'close', setup.columns, 1, [
+            { step: 'Your Step', status: 'info', timestamp: 1, details: `Step 2, "Rename 'discount' to 'promo'": skipped: this file has no column 'discount'.`, affectedColumns: ['discount'] },
+        ]);
+        expect(record.changes[0]).toMatchObject({ kind: 'choice_skipped', serious: true, column: 'discount' });
+        expect(record.changes[0].text).toBe(`Step 2 ("Rename 'discount' to 'promo'") was skipped: this file has no column 'discount'.`);
+        expect(describeSetup({ etlOptions: { manualSteps: [{ id: 'a', kind: 'remove_columns', columns: ['x'] }, { id: 'b', kind: 'rename_column', column: 'y', to: 'z', off: true }] } })).toBe('1 step');
+    });
+
     it('lists every column a choice is about', () => {
         expect(columnsInChoices({
             outlierDecisions: { revenue: 'keep' }, typoDecisions: { region: 'merge' }, blankDecisions: { discount: 'zero' },

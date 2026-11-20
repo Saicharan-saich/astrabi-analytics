@@ -55,7 +55,7 @@ export interface ETLLog {
   /** Totals check: each measure's total in the file vs after cleaning. */
   totalsCheck?: { column: string; uploaded: number | null; cleaned: number; blanked: number; changed: number }[];
   /** Re-run the cleaning with this option to reverse (or restore) the step. */
-  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | Record<string, string> | CleaningRule[] | null; label: string };
+  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | Record<string, string> | CleaningRule[] | CleaningStep[] | null; label: string };
   /** A flag the user can decide on in the cleaning review. */
   decision?: {
     kind: 'outlier' | 'typo' | 'flag';
@@ -71,6 +71,8 @@ export interface ETLLog {
   blanks?: BlankProfile[];
   /** What each number column added up to on the rows this step removed. */
   removedAmounts?: Record<string, number>;
+  /** The person's own reason for a step they added. */
+  reason?: string;
 }
 
 /** A check an analyst writes once; applied on every re-run of the cleaning. */
@@ -108,6 +110,71 @@ export interface EtlOptions {
   customRules?: CleaningRule[];
   /** Per column: what blank cells mean. Unset = leave numbers and dates blank, show categories as "Unknown". */
   blankDecisions?: Record<string, BlankChoice>;
+  /** Steps the person added by hand, run in order after the automatic cleaning, on every clean. */
+  manualSteps?: CleaningStep[];
+}
+
+/** The kinds of step a person can add by hand. */
+export type StepKind =
+  | 'filter_rows' | 'remove_duplicates'
+  | 'remove_columns' | 'keep_columns' | 'rename_column' | 'change_type'
+  | 'fill_blanks' | 'find_replace' | 'group_values' | 'tidy_text' | 'round_numbers'
+  | 'split_column' | 'join_columns' | 'calculated_column' | 'date_part'
+  | 'unpivot' | 'group_by';
+
+export type FilterOp = 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with'
+  | 'greater' | 'greater_eq' | 'less' | 'less_eq' | 'between' | 'blank' | 'not_blank' | 'one_of';
+
+/**
+ * One recorded cleaning step. Only the fields its kind uses are set. Steps
+ * name columns, never rows, so they replay on next month's file.
+ */
+export interface CleaningStep {
+  id: string;
+  kind: StepKind;
+  /** Switched off: kept in the list but not run. */
+  off?: boolean;
+  /** Why the step is there, in the person's words ("Blank region = online orders"). */
+  note?: string;
+  column?: string;
+  columns?: string[];
+  /** filter_rows */
+  op?: FilterOp;
+  value?: string;
+  value2?: string;
+  action?: 'keep' | 'remove';
+  /** remove_duplicates: which copy stays. */
+  keepCopy?: 'first' | 'last';
+  /** rename_column: new name · change_type: new kind · unpivot: name of the new label column. */
+  to?: string;
+  /** fill_blanks */
+  fill?: 'value' | 'zero' | 'down' | 'up' | 'average' | 'median' | 'most_common';
+  /** find_replace */
+  find?: string;
+  replace?: string;
+  wholeCell?: boolean;
+  matchCase?: boolean;
+  /** group_values: these values become one. */
+  groups?: { from: string[]; to: string }[];
+  /** tidy_text */
+  textCase?: 'keep' | 'upper' | 'lower' | 'title' | 'sentence';
+  /** round_numbers */
+  decimals?: number;
+  /** split_column / join_columns */
+  separator?: string;
+  names?: string[];
+  keepOriginal?: boolean;
+  /** New column made by the step (calculated, date part, joined, unpivot values, …). */
+  name?: string;
+  /** calculated_column: column [operator] column-or-number */
+  operator?: '+' | '-' | '*' | '/' | 'pct_change' | 'pct_of';
+  rightColumn?: string;
+  rightNumber?: number;
+  /** date_part */
+  part?: 'year' | 'quarter' | 'month' | 'month_name' | 'year_month' | 'week' | 'weekday' | 'day';
+  /** group_by */
+  groupBy?: string[];
+  totals?: { column: string; how: 'sum' | 'average' | 'count' | 'min' | 'max' | 'count_distinct'; name: string }[];
 }
 /**
  * A saved cleaning setup: the cleaning choices for one kind of file (a client's
@@ -334,6 +401,8 @@ export interface Dataset {
   etlOptions?: EtlOptions;
   /** The saved cleaning setup this data was cleaned with, and what differed. */
   cleaningSetup?: AppliedSetup;
+  /** The table just before the person's own steps (first rows only), for previews in the steps editor. */
+  stepBase?: { rows: Record<string, any>[]; columns: ColumnDefinition[] };
   version?: number;            // Incremented on every re-upload or re-ETL
   createdAt?: number;          // Timestamp of dataset creation
   refreshSchedule?: RefreshSchedule;     // Auto-refresh configuration for live connections

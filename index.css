@@ -5863,3 +5863,93 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-ready-setup { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 0; padding: 8px 10px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); background: var(--bg-hover); }
 .qi-ready-setup svg { flex: none; margin-top: 2px; color: var(--accent-foreground); }
 .qi-ready-setup strong { color: var(--text-primary); }
+
+/* Your steps — the step-by-step cleaning editor */
+.qi-steps { display: grid; gap: 14px; }
+.qi-steps-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border-default); background: var(--bg-surface); box-shadow: var(--shadow-card); }
+.qi-steps-head h3 { margin: 0; font-size: 16px; font-weight: 650; color: var(--text-primary); }
+.qi-steps-head p { margin: 3px 0 0; max-width: 62ch; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.qi-steps-applybar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.qi-steps-applybar > span { font-size: 12px; font-weight: 600; color: #b45309; }
+:root.dark .qi-steps-applybar > span { color: #fbc66b; }
+.qi-steps-warn { display: flex; gap: 6px; align-items: flex-start; margin: 0; padding: 8px 10px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); background: var(--bg-hover); }
+.qi-steps-warn svg { flex: none; margin-top: 2px; color: #d97706; }
+.qi-steps-layout { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) { .qi-steps-layout { grid-template-columns: 340px minmax(0, 1fr); align-items: start; } }
+.qi-steps-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+@media (min-width: 1100px) { .qi-steps-list { position: sticky; top: 12px; } }
+.qi-steps-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 10px 10px 8px; border-radius: 12px; border: 1px solid var(--border-default); background: var(--bg-surface); }
+.qi-steps-item.is-fixed { background: transparent; border-style: dashed; }
+.qi-steps-item.is-active { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent); }
+.qi-steps-item.is-off { opacity: .55; }
+.qi-steps-item.is-off .qi-steps-title strong { text-decoration: line-through; }
+.qi-steps-item.is-skipped { border-left: 3px solid #d97706; }
+.qi-steps-item > div { display: grid; gap: 2px; min-width: 0; }
+.qi-steps-item > div > strong { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.qi-steps-item > div > span { font-size: 12px; color: var(--text-tertiary); }
+.qi-steps-num { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: var(--accent-foreground); background: color-mix(in srgb, var(--color-primary) 12%, transparent); }
+.qi-steps-item.is-fixed .qi-steps-num { color: var(--text-tertiary); background: var(--bg-hover); }
+.qi-steps-title { display: flex; gap: 6px; align-items: flex-start; text-align: left; background: transparent; padding: 0; color: var(--text-primary); }
+.qi-steps-title svg { flex: none; margin-top: 3px; color: var(--text-tertiary); }
+.qi-steps-title strong { font-size: 13px; font-weight: 600; line-height: 1.4; }
+.qi-steps-title:hover:not(:disabled) strong { color: var(--accent-foreground); }
+.qi-steps-result { font-size: 12px; color: var(--text-tertiary); }
+.qi-steps-result.is-warn { color: #b45309; }
+:root.dark .qi-steps-result.is-warn { color: #fbc66b; }
+.qi-steps-note { font-size: 12px; font-style: italic; color: var(--text-secondary); }
+.qi-steps-actions { display: flex; gap: 2px; flex: none; }
+.qi-steps-icon { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; color: var(--text-tertiary); background: transparent; }
+.qi-steps-icon:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-hover); }
+.qi-steps-icon:disabled { opacity: .35; }
+.qi-steps-add { display: flex; gap: 6px; align-items: center; justify-content: center; width: 100%; padding: 10px; border-radius: 12px; font-size: 13px; font-weight: 600; color: var(--accent-foreground); border: 1px dashed color-mix(in srgb, var(--color-primary) 55%, transparent); background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
+.qi-steps-add:hover { background: color-mix(in srgb, var(--color-primary) 10%, transparent); }
+.qi-steps-main { display: grid; gap: 14px; min-width: 0; }
+.qi-steps-palette, .qi-steps-form, .qi-steps-empty { display: grid; gap: 12px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border-default); background: var(--bg-surface); box-shadow: var(--shadow-card); }
+.qi-steps-palette > header, .qi-steps-form > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qi-steps-palette > header strong, .qi-steps-form > header strong { font-size: 14px; font-weight: 650; color: var(--text-primary); }
+.qi-steps-palette-group h4 { margin: 0 0 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-tertiary); }
+.qi-steps-palette-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.qi-steps-palette-grid button { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-default); background: transparent; }
+.qi-steps-palette-grid button:hover { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 6%, transparent); }
+.qi-steps-palette-grid button svg { flex: none; margin-top: 2px; color: var(--accent-foreground); }
+.qi-steps-palette-grid strong { display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.qi-steps-palette-grid em { display: block; font-style: normal; font-size: 12px; line-height: 1.4; color: var(--text-tertiary); }
+.qi-steps-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.qi-steps-row.is-tight { grid-template-columns: minmax(130px, 1fr) minmax(150px, 1.2fr) minmax(120px, 1fr) auto; align-items: center; }
+@media (max-width: 640px) { .qi-steps-row.is-tight { grid-template-columns: 1fr; } }
+.qi-steps-field { display: grid; gap: 4px; min-width: 0; }
+.qi-steps-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.qi-steps-hint { font-size: 11.5px; line-height: 1.4; color: var(--text-tertiary); }
+.qi-steps-input { width: 100%; min-width: 0; padding: 7px 10px; border-radius: 8px; font-size: 13px; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border-default); }
+.qi-steps-input:focus { outline: 2px solid color-mix(in srgb, var(--color-primary) 40%, transparent); border-color: var(--color-primary); }
+:root.dark .qi-steps-input { color-scheme: dark; }
+.qi-steps-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--text-secondary); }
+.qi-steps-checks label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.qi-steps-checks input { accent-color: var(--color-primary); }
+.qi-steps-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.qi-steps-chips button { display: inline-flex; gap: 4px; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; color: var(--text-secondary); border: 1px solid var(--border-default); background: transparent; }
+.qi-steps-chips button:hover { border-color: var(--color-primary); }
+.qi-steps-chips button.is-on { color: var(--accent-foreground); border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 10%, transparent); font-weight: 600; }
+.qi-steps-count { font-size: 11px; color: var(--text-tertiary); font-weight: 400; }
+.qi-steps-formfoot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--border-default); }
+.qi-steps-effect { margin: 0; flex: 1 1 280px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.qi-steps-effect strong { color: var(--text-primary); }
+.qi-steps-effect.is-warn { color: #b45309; }
+:root.dark .qi-steps-effect.is-warn { color: #fbc66b; }
+.qi-steps-empty strong { font-size: 14px; color: var(--text-primary); }
+.qi-steps-empty p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); max-width: 70ch; }
+.qi-steps-empty .qi-review-apply { justify-self: start; }
+.qi-steps-preview { display: grid; gap: 8px; min-width: 0; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border-default); background: var(--bg-surface); }
+.qi-steps-preview > header { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.qi-steps-preview > header strong { font-size: 13.5px; color: var(--text-primary); }
+.qi-steps-preview > header span { font-size: 12px; color: var(--text-tertiary); }
+.qi-steps-grid { max-height: 420px; overflow: auto; border-radius: 8px; border: 1px solid var(--border-default); }
+.qi-steps-grid table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.qi-steps-grid th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 6px 10px; white-space: nowrap; background: var(--bg-hover); border-bottom: 1px solid var(--border-default); }
+.qi-steps-grid th span { display: block; font-weight: 600; color: var(--text-primary); }
+.qi-steps-grid th em { display: block; font-style: normal; font-size: 10.5px; font-weight: 500; color: var(--text-tertiary); }
+.qi-steps-grid td { padding: 5px 10px; white-space: nowrap; color: var(--text-secondary); border-bottom: 1px solid color-mix(in srgb, var(--border-default) 60%, transparent); max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.qi-steps-grid td.is-num { text-align: right; font-variant-numeric: tabular-nums; }
+.qi-steps-grid td.is-blank { color: var(--text-tertiary); font-style: italic; opacity: .7; }
+.qi-steps-grid .is-hit { background: color-mix(in srgb, var(--color-primary) 9%, transparent); }
+.qi-steps-grid th.is-hit span { color: var(--accent-foreground); }

@@ -6,13 +6,13 @@ import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions, Tab } fr
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { DataReadyChecklist, ReadySummary } from './DataReadyChecklist';
 import { CleaningSetupCard } from './CleaningSetupCard';
+import { StepsEditor } from './StepsEditor';
 import { DataKindNote } from './DataKindNote';
 import { WeeklyBriefingCard } from './WeeklyBriefingCard';
 import { ColumnQuestionsCard } from './ColumnQuestionsCard';
 import { CleaningRulesPanel } from './CleaningRulesPanel';
 import { DataExplorerView } from './DataExplorerView';
 import { ETLView } from './ETLView';
-import { DataCleaningPanel } from './DataCleaningPanel';
 import { SchemaView } from './SchemaView';
 import { ColumnMappingWizard } from './ColumnMappingWizard';
 
@@ -523,10 +523,10 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                             <div className="flex flex-wrap items-center gap-3">
                                 <div className="qi-ws-segmented inline-flex rounded-lg p-0.5" role="group" aria-label="Cleaning">
                                     <button type="button" aria-pressed={cleaningMode === 'log'} onClick={() => setCleaningMode('log')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'log' ? 'is-active' : ''}`}>Checklist</button>
-                                    <button type="button" aria-pressed={cleaningMode === 'fix'} onClick={() => setCleaningMode('fix')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'fix' ? 'is-active' : ''}`}>Edit by hand</button>
+                                    <button type="button" aria-pressed={cleaningMode === 'fix'} onClick={() => setCleaningMode('fix')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'fix' ? 'is-active' : ''}`}>Your steps</button>
                                 </div>
                                 <p className="qi-ws-muted text-[12.5px]">
-                                    {cleaningMode === 'log' ? 'What was checked and fixed, why, and the decisions only you can make.' : 'Remove copies, fill blanks, tidy text, split or join columns yourself.'}
+                                    {cleaningMode === 'log' ? 'What was checked and fixed, why, and the decisions only you can make.' : 'Clean it your way, step by step. Steps run again on every new file and are saved in the setup.'}
                                 </p>
                             </div>
                             {cleaningMode === 'log' ? (
@@ -551,7 +551,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                                     )}
                                 </>
                             ) : (
-                                <DataCleaningPanel dataset={dataset} onDataCleaned={(rows, entry) => onDataCleaned?.(rows, entry)} />
+                                <StepsEditor dataset={dataset} onApply={onApplyCleaningDecisions} pending={etlRevertPending} />
                             )}
                         </>
                     )}

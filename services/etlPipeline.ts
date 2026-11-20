@@ -20,6 +20,10 @@ import { generateDimDate } from './dimDateGenerator';
 import { checkTotals, describeTotals } from './totalsCheck';
 import { convertMixedUnits, runQualityChecks } from './etlQualityChecks';
 import { amountsIn, applyBlankDecisions, profileBlanks } from './blankValues';
+import { applySteps } from './cleaningSteps';
+
+/** Rows kept from before the person's own steps, for live previews in the steps editor. */
+const STEP_PREVIEW_ROWS = 5000;
 import {
     parseLocaleNumber, hasCurrencyMarker, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
     buildCanonicalCategoryMap, findNearDuplicateGroups, pivotTwoDigitYear,
@@ -2309,6 +2313,8 @@ export function runETLPipeline(
     logs: ETLLog[];
     timeContext?: TimeContext;
     dimDate?: DimDateRow[];
+    /** The table before the person's own steps (first rows), when there are steps. */
+    stepBase?: { rows: Record<string, any>[]; columns: ColumnDefinition[] };
     qualityScore: number;
     lineage?: ColumnLineage[];
     contract?: DataContract;
@@ -2404,13 +2410,25 @@ export function runETLPipeline(
         allLogs.push(...decided.logs);
     }
 
+    // ── LAYER 5e: The person's own steps, in order, on every clean ──
+    const rowsBeforeSteps = rows;
+    let stepColumns = finalColumns;
+    let stepBase: { rows: Record<string, any>[]; columns: ColumnDefinition[] } | undefined;
+    if (etlOptions.manualSteps?.length) {
+        stepBase = { rows: rows.slice(0, STEP_PREVIEW_ROWS), columns: finalColumns.map(c => ({ ...c })) };
+        const ran = applySteps(rows, finalColumns, etlOptions.manualSteps);
+        rows = ran.rows;
+        stepColumns = ran.columns;
+        allLogs.push(...ran.logs);
+    }
+
     // ── LAYER 6: Data Contract Validation ──
-    const l6 = layer6_dataContractValidation(rows, finalColumns);
+    const l6 = layer6_dataContractValidation(rows, stepColumns);
     allLogs.push(...l6.logs);
     console.log(`[ETL L6] Contract: ${l6.contract.status} (${l6.contract.violations.length} violations)`);
 
     // ── POST: TimeContext ──
-    const tc = buildTimeContext(rows, finalColumns);
+    const tc = buildTimeContext(rows, stepColumns);
     allLogs.push(...tc.logs);
 
     // ── POST: DimDate ──
@@ -2453,8 +2471,11 @@ export function runETLPipeline(
 
     // ── POST: Column Ordering (ID → Date → Dimension → Metric) ──
     const typeOrder: Record<string, number> = { ID: 0, DATE: 1, DIMENSION: 2, METRIC: 3 };
+    // Conversion evidence is measured on the cleaned table before the person's steps
+    // (row for row with the source); a column a step made or changed keeps what applies.
+    const profiledBase = new Map(attachConversionProfiles(finalColumns, preTransformRows, rowsBeforeSteps).map(c => [c.name, c] as const));
     const profiledColumns = attachCurrencies(
-        attachConversionProfiles(finalColumns, preTransformRows, rows),
+        stepColumns.map(c => { const p = profiledBase.get(c.name); return p ? { ...p, type: c.type, physicalType: c.physicalType ?? p.physicalType } : c; }),
         Object.keys(rawData[0] || {}),
         preTransformRows,
     );
@@ -2477,6 +2498,7 @@ export function runETLPipeline(
         timeContext: tc.timeContext,
         dimDate,
         qualityScore,
+        ...(stepBase ? { stepBase } : {}),
         lineage: l5.lineage,
         contract: l6.contract,
         summary: {

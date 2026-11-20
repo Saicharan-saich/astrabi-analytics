@@ -563,7 +563,7 @@ export const runAutomatedETL = (
     fileName: string,
     columnTypeOverrides?: Record<string, ColumnType>,
     etlOptions?: import('../types').EtlOptions,
-): { rows: any[], logs: ETLLog[], columns: ColumnDefinition[], timeContext?: TimeContext, dimDate?: import('../types').DimDateRow[] } => {
+): { rows: any[], logs: ETLLog[], columns: ColumnDefinition[], timeContext?: TimeContext, dimDate?: import('../types').DimDateRow[], stepBase?: import('../types').Dataset['stepBase'] } => {
     const result = runETLPipeline(rawData, fileName, columnTypeOverrides, etlOptions);
     return {
         rows: result.rows,
@@ -571,6 +571,7 @@ export const runAutomatedETL = (
         columns: result.columns,
         timeContext: result.timeContext,
         dimDate: result.dimDate,
+        stepBase: result.stepBase,
     };
 };
 

@@ -11,7 +11,7 @@
  * name or a known column name.
  */
 
-import { ColumnType, type AppliedSetup, type CleaningSetup, type Dataset, type EtlOptions, type SetupChange } from '../types';
+import { ColumnType, type AppliedSetup, type CleaningSetup, type Dataset, type ETLLog, type EtlOptions, type SetupChange } from '../types';
 
 /** "Order Date " / "order-date" / "ORDER_DATE" → "order_date". */
 export function headerKey(header: string): string {
@@ -148,10 +148,18 @@ export function compareWithSetup(setup: CleaningSetup, columns: { name: string; 
     return changes.sort((a, b) => Number(b.serious) - Number(a.serious));
 }
 
-/** The record a dataset keeps of the setup that cleaned it. */
-export function appliedSetup(setup: CleaningSetup, match: 'exact' | 'close', columns: { name: string; type: ColumnType }[], now = Date.now()): AppliedSetup {
-    return { id: setup.id, name: setup.name, match, appliedAt: now, changes: compareWithSetup(setup, columns) };
+/** The record a dataset keeps of the setup that cleaned it (with any of its steps this file could not run). */
+export function appliedSetup(setup: CleaningSetup, match: 'exact' | 'close', columns: { name: string; type: ColumnType }[], now = Date.now(), logs: ETLLog[] = []): AppliedSetup {
+    const skipped: SetupChange[] = logs
+        .filter(l => l.step === 'Your Step' && l.status === 'info')
+        .map(l => {
+            const m = /^Step (\d+), "(.+)": (.+?)\.?$/.exec(l.details);
+            return { kind: 'choice_skipped' as const, column: l.affectedColumns?.[0] || '', serious: true,
+                text: m ? `Step ${m[1]} ("${m[2]}") was skipped: this file has no column ${list(l.affectedColumns)}.` : l.details };
+        });
+    return { id: setup.id, name: setup.name, match, appliedAt: now, changes: [...skipped, ...compareWithSetup(setup, columns)].sort((a, b) => Number(b.serious) - Number(a.serious)) };
 }
+const list = (columns: string[] = []) => columns.map(c => `'${c.replace(/_/g, ' ')}'`).join(', ');
 
 const stable = (value: unknown): string => JSON.stringify(value, (_key, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v));
 
@@ -167,7 +175,9 @@ export function describeSetup(setup: Pick<CleaningSetup, 'etlOptions' | 'columnT
     const n = (count: number, one: string, many = `${one}s`) => (count ? `${count} ${count === 1 ? one : many}` : '');
     const decisions = Object.keys(o.outlierDecisions || {}).length + Object.keys(o.typoDecisions || {}).length + Object.keys(o.flagDecisions || {}).length;
     const undone = (['keepDuplicateRows', 'keepTotalRows', 'keepWideLayout', 'keepNameColumns', 'keepPlaceholders', 'keepCategorySpellings', 'skipAllocation', 'skipLineCost', 'keepMixedUnits'] as const).filter(k => o[k]).length;
+    const steps = (o.manualSteps || []).filter(step => !step.off).length;
     const parts = [
+        n(steps, 'step'),
         n((o.customRules || []).length, 'check'),
         n(Object.keys(o.blankDecisions || {}).length, 'blank-cell choice'),
         n(decisions, 'review decision'),

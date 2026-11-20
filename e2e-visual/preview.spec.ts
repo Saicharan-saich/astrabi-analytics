@@ -435,7 +435,7 @@ for (const theme of ['light', 'dark'] as const) {
                     await page.locator('.qi-step:visible button[aria-expanded]').first().click().catch(() => {});
                     await page.waitForTimeout(500);
                     await page.screenshot({ path: path.join(OUT, `55-ws-cleaning-step-${theme}.png`) });
-                    await page.getByRole('button', { name: 'Edit by hand' }).click().catch(() => {});
+                    await page.getByRole('button', { name: 'Your steps', exact: true }).click().catch(() => {});
                     await page.waitForTimeout(1200);
                     await page.screenshot({ path: path.join(OUT, `56-ws-fix-by-hand-${theme}.png`) });
                 }

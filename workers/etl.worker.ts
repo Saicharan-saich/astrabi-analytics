@@ -117,7 +117,7 @@ self.onmessage = async (e: MessageEvent) => {
         } else if (sourceSchema) Object.assign(result, { sourceSchema });
         Object.assign(result, { rawRows: data, rawRelatedTables });
         if (picked) {
-            const applied = appliedSetup(picked.setup, picked.match, result.columns || []);
+            const applied = appliedSetup(picked.setup, picked.match, result.columns || [], Date.now(), result.logs || []);
             const serious = applied.changes.filter(c => c.serious).length;
             result.appliedSetup = applied;
             result.etlOptions = picked.setup.etlOptions;

@@ -94,6 +94,14 @@ const RULES: Record<string, Rule> = {
             ? `Left out ${plural(Math.max(0, l.rowsBefore - l.rowsAfter), 'row')} with no '${c}' (your choice)`
             : /counted as 0/.test(l.details) ? `Counted ${plural(n ?? 0, 'blank')} in '${c}' as 0 (your choice)` : `Filled ${plural(n ?? 0, 'blank')} in '${c}' with the typical value (your choice)`,
     },
+    'Your Step': {
+        kind: 'converted',
+        title: l => {
+            const m = /^Step \d+, "(.+)": (.+?)\.?$/.exec(l.details);
+            if (!m) return 'One of your steps';
+            return l.status === 'info' ? `Your step "${m[1]}" was skipped: no such column in this file` : `${m[1]} (your step)`;
+        },
+    },
     'Kept As Uploaded': { kind: 'kept', title: l => keptTitle(l) },
 };
 
@@ -153,7 +161,8 @@ export function summariseEtlChanges(logs: ETLLog[] | undefined): ChangeSummary {
         const column = quoted(l.details) || l.affectedColumns?.[0];
         items.push({
             id: `${l.step}:${index}`,
-            kind: rule.kind,
+            // A step of the person's that could not run is something to check, not a change.
+            kind: l.step === 'Your Step' && l.status === 'info' ? 'check' : rule.kind,
             title: rule.title(l, count, column),
             detail: l.details,
             columns: l.affectedColumns || [],

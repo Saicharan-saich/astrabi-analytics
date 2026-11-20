@@ -646,6 +646,7 @@ function App() {
           fieldOrigins: result.fieldOrigins,
           // A saved cleaning setup matched this file: keep its choices, so every re-clean uses them.
           ...(result.appliedSetup ? { cleaningSetup: result.appliedSetup as AppliedSetup, etlOptions: result.etlOptions } : {}),
+          ...(result.stepBase ? { stepBase: result.stepBase } : {}),
           version: 1,
           createdAt: Date.now(),
         };
@@ -831,6 +832,7 @@ function App() {
           etlLogs: result.logs,
           timeContext: result.timeContext,
           dimDate: result.dimDate,
+          stepBase: result.stepBase,
           sourceSchema: result.sourceSchema || dataset.sourceSchema,
           sourceTables: result.relatedTables || dataset.sourceTables,
           rawSourceTables: result.rawRelatedTables || dataset.rawSourceTables,
@@ -891,7 +893,7 @@ function App() {
 
     worker.onmessage = (event: MessageEvent) => {
       if (event.data.type === 'SUCCESS') {
-        const { rows, logs, columns, timeContext, dimDate } = event.data.result;
+        const { rows, logs, columns, timeContext, dimDate, stepBase } = event.data.result;
         const updated: Dataset = {
           ...dataset,
           rows,
@@ -900,6 +902,7 @@ function App() {
           etlLogs: logs,
           timeContext,
           dimDate,
+          stepBase,
           version: (dataset.version || 1) + 1,
         };
         try {
@@ -954,7 +957,7 @@ function App() {
     const worker = new Worker(new URL('./workers/etl.worker.ts', import.meta.url), { type: 'module' });
     worker.onmessage = (event: MessageEvent) => {
       if (event.data.type === 'SUCCESS') {
-        const { rows, logs, columns, timeContext, dimDate } = event.data.result;
+        const { rows, logs, columns, timeContext, dimDate, stepBase } = event.data.result;
         const updated: Dataset = {
           ...dataset,
           rows,
@@ -963,11 +966,12 @@ function App() {
           etlLogs: logs,
           timeContext,
           dimDate,
+          stepBase,
           etlOptions: Object.keys(nextOptions).length ? nextOptions : undefined,
           version: (dataset.version || 1) + 1,
         };
         if (withSetup) {
-          updated.cleaningSetup = setupRecord(withSetup, 'exact', columns);
+          updated.cleaningSetup = setupRecord(withSetup, 'exact', columns, Date.now(), logs);
           useSetupStore.getState().markUsed(withSetup.id);
         } else if (withSetup === null) delete updated.cleaningSetup;
         try {
@@ -1319,7 +1323,7 @@ function App() {
           // BUG 1 FIX: Use datasetRef.current (not closure 'ds') for the spread
           // so we don't revert any state changes that happened during the async refresh
           const latestDs = datasetRef.current?.id === ds.id ? datasetRef.current : ds;
-          const { rows, columns, timeContext, dimDate, rawRows, logs } = event.data.result;
+          const { rows, columns, timeContext, dimDate, rawRows, logs, stepBase } = event.data.result;
           const refreshedDs: Dataset = {
             ...latestDs,
             rows,
@@ -1329,6 +1333,7 @@ function App() {
             etlLogs: logs,
             timeContext,
             dimDate,
+            stepBase,
             version: (latestDs.version || 1) + 1,
             ...(event.data.result.relationalCatalog ? {
               relationalCatalog: event.data.result.relationalCatalog,
@@ -1409,6 +1414,9 @@ function App() {
         isConnector: true,
         sourceSchema: ds.sourceSchema,
         subjectTable: ds.subjectTable,
+        // Every refresh is cleaned with the same choices and steps as before.
+        etlOptions: ds.etlOptions,
+        columnTypeOverrides: Object.keys(handSetKinds(ds)).length ? handSetKinds(ds) : undefined,
       });
     } catch (err: any) {
       console.error('[App] Live refresh failed:', err);

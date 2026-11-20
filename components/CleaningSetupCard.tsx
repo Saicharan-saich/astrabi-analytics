@@ -171,7 +171,7 @@ export const CleaningSetupCard: React.FC<Props> = ({ dataset, onApplySetup, onCl
                                 <button type="submit" className="qi-review-apply" disabled={!name.trim() || busy}><CheckCircle2 className="h-4 w-4" aria-hidden /> Save as a setup</button>
                             </div>
                         </form>
-                        <p className="qi-setup-meta">Saved: your checks, blank-cell decisions, review decisions, undone steps and column kinds. Edits made by hand are not saved; add a check for anything that should happen every time.</p>
+                        <p className="qi-setup-meta">Saved: your steps, checks, blank-cell decisions, review decisions, undone steps and column kinds.</p>
                     </div>
                 </div>
             )}

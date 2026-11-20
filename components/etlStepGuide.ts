@@ -23,6 +23,10 @@ export interface StepGuide {
 // Ordered rules — the first whose pattern matches the step name wins.
 const RULES: Array<{ test: RegExp; guide: StepGuide }> = [
     {
+        test: /^your step/i,
+        guide: { emoji: '✋', title: 'A step you added', what: 'A cleaning step added by hand in Your steps; it runs on this file and on every later file cleaned with the same setup.', why: 'You added this step in Your steps. Give it a reason there, so anyone reading this knows why it is done.', ifSkipped: 'Answers would use the data without this change.', example: 'Remove rows where the customer contains "test"' },
+    },
+    {
         test: /^saved setup applied/i,
         guide: { emoji: '🧩', title: 'Your saved setup', what: 'Cleans this file with the choices saved for files like it: your checks, blank-cell decisions, review decisions and column kinds.', why: 'A file that comes back every week or month should be cleaned the same way every time, so its numbers can be compared.', ifSkipped: 'Each new file would be cleaned from scratch, and choices made last time would have to be made again, or could be forgotten.', example: "Last month's choice to count a blank discount as 0 applies to this month's file too" },
     },
