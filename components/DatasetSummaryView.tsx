@@ -5,6 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions, Tab } from '../types';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { DataReadyChecklist, ReadySummary } from './DataReadyChecklist';
+import { CleaningSetupCard } from './CleaningSetupCard';
 import { DataKindNote } from './DataKindNote';
 import { WeeklyBriefingCard } from './WeeklyBriefingCard';
 import { ColumnQuestionsCard } from './ColumnQuestionsCard';
@@ -43,6 +44,10 @@ interface DatasetSummaryViewProps {
     onEtlReclean?: () => void;
     /** Apply the cleaning review's decisions in one re-run. */
     onApplyCleaningDecisions?: (nextOptions: EtlOptions, label: string) => void;
+    /** Saved cleaning setups. */
+    onApplySetup?: (setup: import('../types').CleaningSetup) => void;
+    onCleanWithoutSetup?: () => void;
+    onSetupSaved?: (applied: import('../types').AppliedSetup) => void;
     etlRevertPending?: string | null;
     /** Open AI SQL with a question ready (from the briefing). */
     onAskAiSql?: (question: string) => void;
@@ -275,6 +280,9 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     onEtlReclean,
     onApplyCleaningDecisions,
     etlRevertPending,
+    onApplySetup,
+    onCleanWithoutSetup,
+    onSetupSaved,
     onAskAiSql,
     mappingPending = false,
 }) => {
@@ -523,6 +531,9 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                             </div>
                             {cleaningMode === 'log' ? (
                                 <>
+                                    {!dataset.relationalCatalog && (
+                                        <CleaningSetupCard dataset={dataset} onApplySetup={onApplySetup} onCleanWithoutSetup={onCleanWithoutSetup} onSetupSaved={onSetupSaved} pending={etlRevertPending} />
+                                    )}
                                     <DataReadyChecklist
                                         dataset={dataset}
                                         onApply={onApplyCleaningDecisions}

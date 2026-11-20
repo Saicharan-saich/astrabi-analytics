@@ -21,6 +21,9 @@ import { resolveAISQLSemanticModel } from './services/ai-sql/semanticLayer';
 import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
 import { fetchAISQLEngineConfig } from './services/ai-sql/engineConfig';
 import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor, datasetSignature } from './services/columnCorrectionsService';
+import { useSetupStore } from './store/useSetupStore';
+import { appliedSetup as setupRecord, handSetKinds } from './utils/cleaningSetups';
+import type { AppliedSetup, CleaningSetup } from './types';
 import { buildAutoDashboard } from './services/autoDashboardBuilder';
 import { refreshLiveDataset } from './services/liveRefreshService';
 import { preloadDuckDB } from './services/duckdbEngine';
@@ -641,9 +644,12 @@ function App() {
           subjectTable: result.subjectTable,
           fieldLineage: result.fieldLineage,
           fieldOrigins: result.fieldOrigins,
+          // A saved cleaning setup matched this file: keep its choices, so every re-clean uses them.
+          ...(result.appliedSetup ? { cleaningSetup: result.appliedSetup as AppliedSetup, etlOptions: result.etlOptions } : {}),
           version: 1,
           createdAt: Date.now(),
         };
+        if (result.appliedSetup) useSetupStore.getState().markUsed(result.appliedSetup.id);
 
         // ── BUILD SEMANTIC MODEL (deterministic, from ETL output) ──
         try {
@@ -794,7 +800,8 @@ function App() {
       }
     };
 
-    worker.postMessage({ type: 'PROCESS_FILE', file });
+    // Saved cleaning setups go with the file: one whose columns match cleans it.
+    worker.postMessage({ type: 'PROCESS_FILE', file, setups: useSetupStore.getState().setups });
   };
 
   const reprocessDatasetTypes = (
@@ -932,17 +939,17 @@ function App() {
     rerunCleaning(nextOptions, label, '__review__');
   };
 
-  const rerunCleaning = (nextOptions: EtlOptions, label: string, pendingKey: string) => {
+  const rerunCleaning = (
+    nextOptions: EtlOptions,
+    label: string,
+    pendingKey: string,
+    /** A saved setup to clean with (its kinds replace the hand-set ones), or null to clean without one. */
+    withSetup?: CleaningSetup | null,
+  ) => {
     if (!dataset?.rawRows?.length) return;
     // Keep the column roles the user set by hand; everything else is re-detected.
-    const overrides: Record<string, ColumnType> = {};
-    for (const entry of dataset.etlLogs || []) {
-      if (entry.step !== 'User Override') continue;
-      for (const name of entry.affectedColumns || []) {
-        const column = dataset.columns.find(c => c.name === name);
-        if (column) overrides[name] = column.type;
-      }
-    }
+    const overrides: Record<string, ColumnType> = withSetup === undefined ? handSetKinds(dataset)
+      : withSetup ? { ...(withSetup.columnTypes || {}) } : {};
     setEtlRevertPending(pendingKey);
     const worker = new Worker(new URL('./workers/etl.worker.ts', import.meta.url), { type: 'module' });
     worker.onmessage = (event: MessageEvent) => {
@@ -959,6 +966,10 @@ function App() {
           etlOptions: Object.keys(nextOptions).length ? nextOptions : undefined,
           version: (dataset.version || 1) + 1,
         };
+        if (withSetup) {
+          updated.cleaningSetup = setupRecord(withSetup, 'exact', columns);
+          useSetupStore.getState().markUsed(withSetup.id);
+        } else if (withSetup === null) delete updated.cleaningSetup;
         try {
           updated.semanticModel = buildSemanticModel(updated, dataset.semanticModel);
         } catch (err) {
@@ -1071,6 +1082,19 @@ function App() {
       ? () => { if (!etlRevertPending) rerunCleaning(dataset.etlOptions || {}, 'Re-cleaned with the current rules', '__reclean__'); }
       : undefined,
     etlRevertPending,
+    // Saved cleaning setups: clean with one, clean without one, or record that one was saved from this data.
+    onApplySetup: dataset?.rawRows?.length && !dataset.relationalCatalog
+      ? (setup: CleaningSetup) => { if (!etlRevertPending) rerunCleaning(setup.etlOptions || {}, `Cleaned with the setup '${setup.name}'`, '__setup__', setup); }
+      : undefined,
+    onCleanWithoutSetup: dataset?.rawRows?.length && !dataset.relationalCatalog
+      ? () => { if (!etlRevertPending) rerunCleaning({}, 'Cleaned without the saved setup', '__setup__', null); }
+      : undefined,
+    onSetupSaved: (applied: AppliedSetup) => {
+      if (!dataset) return;
+      const updated: Dataset = { ...dataset, cleaningSetup: applied };
+      setDataset(updated);
+      saveDatasetToDB(updated);
+    },
   };
 
   const handlePromoteToTitle = (columnName: string) => {

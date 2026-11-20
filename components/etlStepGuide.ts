@@ -23,6 +23,10 @@ export interface StepGuide {
 // Ordered rules — the first whose pattern matches the step name wins.
 const RULES: Array<{ test: RegExp; guide: StepGuide }> = [
     {
+        test: /^saved setup applied/i,
+        guide: { emoji: '🧩', title: 'Your saved setup', what: 'Cleans this file with the choices saved for files like it: your checks, blank-cell decisions, review decisions and column kinds.', why: 'A file that comes back every week or month should be cleaned the same way every time, so its numbers can be compared.', ifSkipped: 'Each new file would be cleaned from scratch, and choices made last time would have to be made again, or could be forgotten.', example: "Last month's choice to count a blank discount as 0 applies to this month's file too" },
+    },
+    {
         test: /^repeated header rows/i,
         guide: { emoji: '🔁', title: 'Repeated heading rows', what: 'Removes rows that just repeat the column headings in the middle of the data.', why: 'Exports often repeat the headings on every page; those rows are not records.', ifSkipped: 'Each repeated heading counts as an extra record and breaks number columns.', example: 'A row reading "Date, Region, Revenue" halfway down' },
     },

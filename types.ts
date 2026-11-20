@@ -109,6 +109,52 @@ export interface EtlOptions {
   /** Per column: what blank cells mean. Unset = leave numbers and dates blank, show categories as "Unknown". */
   blankDecisions?: Record<string, BlankChoice>;
 }
+/**
+ * A saved cleaning setup: the cleaning choices for one kind of file (a client's
+ * monthly export), applied automatically to every later file with the same
+ * columns. Holds choices and column names only, never rows.
+ */
+export interface CleaningSetup {
+  id: string;
+  /** e.g. "Acme · monthly sales export". */
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  /** The file's headers as uploaded, used to recognise the next file. */
+  headers: string[];
+  /** The cleaned columns and their kinds, to spot a file that has changed. */
+  columns: { name: string; type: ColumnType }[];
+  /** Every cleaning choice: rules, blank decisions, reviews, undone steps. */
+  etlOptions: EtlOptions;
+  /** Column kinds set by hand. */
+  columnTypes?: Record<string, ColumnType>;
+  notes?: string;
+  timesUsed?: number;
+  lastUsedAt?: number;
+}
+
+/** One way a new file differs from the setup it was cleaned with. */
+export interface SetupChange {
+  kind: 'missing_column' | 'new_column' | 'kind_changed' | 'choice_skipped';
+  column: string;
+  /** Plain words for the person. */
+  text: string;
+  /** Could it change the numbers? */
+  serious: boolean;
+}
+
+/** On a dataset: which setup cleaned it, and how the file compared. */
+export interface AppliedSetup {
+  id: string;
+  name: string;
+  /** 'exact' = the same columns; 'close' = most columns match. */
+  match: 'exact' | 'close';
+  appliedAt: number;
+  changes: SetupChange[];
+  /** The setup was saved from this data (rather than applied to it). */
+  savedHere?: boolean;
+}
+
 /** What to do with a column's blank cells. */
 export type BlankChoice = 'leave' | 'zero' | 'typical' | 'remove';
 
@@ -286,6 +332,8 @@ export interface Dataset {
   aiSqlSemanticRevision?: string;
   /** Cleaning steps the user reversed; re-applied whenever the ETL re-runs. */
   etlOptions?: EtlOptions;
+  /** The saved cleaning setup this data was cleaned with, and what differed. */
+  cleaningSetup?: AppliedSetup;
   version?: number;            // Incremented on every re-upload or re-ETL
   createdAt?: number;          // Timestamp of dataset creation
   refreshSchedule?: RefreshSchedule;     // Auto-refresh configuration for live connections

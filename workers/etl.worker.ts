@@ -2,9 +2,10 @@ import { runAutomatedETL, parseCSV, parseExcelMultiSheet } from '../services/ana
 import { buildRelationalCatalog, defaultSubjectTable, materializeSubject, validateRelationship } from '../services/relationalCatalog';
 import { normalizeRelatedTables } from '../services/relationalNormalization';
 import { planWorkbookSheets, recordSheets } from '../services/workbookSheets';
+import { appliedSetup, headersOf, overridesFor, pickSetup } from '../utils/cleaningSetups';
 
 self.onmessage = async (e: MessageEvent) => {
-    const { type, file, fileName, rawData, isConnector, columnTypeOverrides, sourceColumnTypeOverrides, sourceSchema, joinEdges, etlOptions } = e.data;
+    const { type, file, fileName, rawData, isConnector, columnTypeOverrides, sourceColumnTypeOverrides, sourceSchema, joinEdges, etlOptions, setups } = e.data;
     if (type !== 'PROCESS_FILE') return;
     try {
         let data: any[] = [];
@@ -80,6 +81,20 @@ self.onmessage = async (e: MessageEvent) => {
             subject = materializeSubject(relatedTables, catalog, subjectTable!);
             data = subject.rows;
         }
+        // A new upload whose columns match a saved cleaning setup is cleaned with
+        // that setup's choices (only when no choices were passed, i.e. a fresh upload).
+        let useOptions = etlOptions;
+        let useOverrides = columnTypeOverrides;
+        let picked: ReturnType<typeof pickSetup> = null;
+        if (!(subject && catalog) && !etlOptions && Array.isArray(setups) && setups.length) {
+            const headers = headersOf(data);
+            picked = pickSetup(headers, setups);
+            if (picked) {
+                useOptions = picked.setup.etlOptions;
+                const fromSetup = overridesFor(picked.setup, headers);
+                if (fromSetup || columnTypeOverrides) useOverrides = { ...(fromSetup || {}), ...(columnTypeOverrides || {}) };
+            }
+        }
         const result: any = subject && catalog
             ? {
                 rows: subject.rows,
@@ -95,12 +110,22 @@ self.onmessage = async (e: MessageEvent) => {
                 timeContext: subject.timeContext,
                 dimDate: undefined,
               }
-            : runAutomatedETL(data, fileName || file?.name || 'dataset', columnTypeOverrides, etlOptions);
+            : runAutomatedETL(data, fileName || file?.name || 'dataset', useOverrides, useOptions);
         if (!(subject && catalog) && sheetLogs.length) result.logs = [...sheetLogs, ...(result.logs || [])];
         if (subject && catalog) {
             Object.assign(result, { relationalCatalog: catalog, subjectTable, fieldLineage: subject.lineage, fieldOrigins: subject.origins, sourceSchema: catalog.schema, relatedTables, timeContext: subject.timeContext, dimDate: undefined });
         } else if (sourceSchema) Object.assign(result, { sourceSchema });
         Object.assign(result, { rawRows: data, rawRelatedTables });
+        if (picked) {
+            const applied = appliedSetup(picked.setup, picked.match, result.columns || []);
+            const serious = applied.changes.filter(c => c.serious).length;
+            result.appliedSetup = applied;
+            result.etlOptions = picked.setup.etlOptions;
+            result.logs = [{
+                step: 'Saved Setup Applied', stepNumber: 0, status: serious ? 'info' : 'applied', timestamp: Date.now(),
+                details: `Cleaned with your saved setup '${picked.setup.name}'${picked.match === 'exact' ? ' (same columns as before)' : ' (most columns match)'}.${applied.changes.length ? ` ${applied.changes.length} difference(s) from the file it was made for${serious ? `, ${serious} could change the numbers` : ''}.` : ''}`,
+            }, ...(result.logs || [])];
+        }
         self.postMessage({ type: 'SUCCESS', result });
     } catch (error: any) {
         self.postMessage({ type: 'ERROR', error: error.message || 'Unknown worker error' });

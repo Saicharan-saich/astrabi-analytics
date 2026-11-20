@@ -4,7 +4,7 @@
  * start asking questions in AI SQL.
  */
 import { useEffect, useMemo, useRef } from 'react';
-import { ArrowRight, CheckCircle2, Eye, Layers, Link2, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Eye, Layers, Link2, Puzzle, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import type { Dataset } from '../types';
 import { summariseDataReady } from '../services/dataReadySummary';
 
@@ -47,6 +47,20 @@ export function DataReadyDialog({ dataset, source, onViewChanges, onContinue, on
                 <div className="qi-ready-mark" aria-hidden><CheckCircle2 className="h-6 w-6" /></div>
                 <h2 id="qi-ready-title">{title}</h2>
                 <p id="qi-ready-lead" className="qi-ready-facts"><strong>{summary.name}</strong> · {summary.facts}</p>
+                {dataset.cleaningSetup && !dataset.cleaningSetup.savedHere && (() => {
+                    const serious = dataset.cleaningSetup.changes.filter(c => c.serious).length;
+                    return (
+                        <p className="qi-ready-setup" role="status">
+                            <Puzzle className="h-4 w-4" aria-hidden />
+                            <span>
+                                Cleaned with your saved setup <strong>{dataset.cleaningSetup.name}</strong>.{' '}
+                                {serious ? `${serious} difference${serious === 1 ? '' : 's'} from the earlier file could change the numbers: open View data changes to see them.`
+                                    : dataset.cleaningSetup.changes.length ? 'A few small differences from the earlier file; nothing that changes the numbers.'
+                                        : 'Same columns as before, cleaned the same way.'}
+                            </span>
+                        </p>
+                    );
+                })()}
 
                 <div className="qi-ready-body">
                     <section aria-label="What the cleaning did">
