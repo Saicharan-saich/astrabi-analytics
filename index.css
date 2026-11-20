@@ -5897,7 +5897,7 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-steps-result.is-warn { color: #b45309; }
 :root.dark .qi-steps-result.is-warn { color: #fbc66b; }
 .qi-steps-note { font-size: 12px; font-style: italic; color: var(--text-secondary); }
-.qi-steps-actions { display: flex; gap: 2px; flex: none; }
+.qi-steps-item > div > .qi-steps-actions { display: flex; gap: 2px; margin: 4px 0 0 -6px; }
 .qi-steps-icon { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; color: var(--text-tertiary); background: transparent; }
 .qi-steps-icon:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-hover); }
 .qi-steps-icon:disabled { opacity: .35; }

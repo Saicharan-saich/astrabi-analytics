@@ -441,12 +441,12 @@ export const StepsEditor: React.FC<Props> = ({ dataset, onApply, pending = null 
                                     </button>
                                     <span className={`qi-steps-result ${r?.status === 'skipped' ? 'is-warn' : ''}`}>{r?.text}</span>
                                     {step.note && <span className="qi-steps-note">Why: {step.note}</span>}
-                                </div>
-                                <div className="qi-steps-actions">
+                                    <div className="qi-steps-actions">
                                     <button type="button" className="qi-steps-icon" aria-label={`Move step ${i + 1} up`} onClick={() => move(i, -1)} disabled={i === 0 || Boolean(editing)}><ChevronUp className="h-3.5 w-3.5" /></button>
                                     <button type="button" className="qi-steps-icon" aria-label={`Move step ${i + 1} down`} onClick={() => move(i, 1)} disabled={i === draft.length - 1 || Boolean(editing)}><ChevronDown className="h-3.5 w-3.5" /></button>
                                     <button type="button" className="qi-steps-icon" aria-label={step.off ? `Switch step ${i + 1} on` : `Switch step ${i + 1} off`} aria-pressed={!step.off} onClick={() => setDraft(draft.map((s, j) => (j === i ? { ...s, off: !s.off } : s)))} disabled={Boolean(editing)}>{step.off ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button>
                                     <button type="button" className="qi-steps-icon" aria-label={`Delete step ${i + 1}`} onClick={() => setDraft(draft.filter((_s, j) => j !== i))} disabled={Boolean(editing)}><Trash2 className="h-3.5 w-3.5" /></button>
+                                    </div>
                                 </div>
                             </li>
                         );
