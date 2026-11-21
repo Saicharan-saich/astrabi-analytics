@@ -41,7 +41,11 @@ describe('handover page', () => {
     });
 
     it('lists the file it expects, every step with its reason, and every decision in plain words', () => {
-        expect(section('file').columns![2]).toEqual({ name: 'revenue', kind: 'Number (added up and averaged)' });
+        expect(section('file').columns![2]).toEqual({ name: 'Revenue', kind: 'Number (added up and averaged)' });
+        // Headers as the client's file has them; a column the cleaning renamed or dropped says so.
+        const made = buildHandover({ ...setup, headers: [...setup.headers, 'Notes'], columns: [...setup.columns, { name: 'profit', type: ColumnType.METRIC }] });
+        expect(made.sections[0].columns!.map(c => c.name)).toEqual(['Order ID', 'Region', 'Revenue', 'Discount', 'Order Date', 'Notes']);
+        expect(made.sections[0].columns!.at(-1)!.kind).toBe('Renamed or removed by the cleaning');
         expect(section('steps').items).toEqual([
             { text: "Remove rows where 'customer' contains 'test'", why: "The client's QA team places test orders", off: undefined },
             { text: "Rename 'cust' to 'Customer'", why: undefined, off: true },

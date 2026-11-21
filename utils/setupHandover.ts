@@ -53,12 +53,16 @@ const KEPT: Record<string, string> = {
 export function buildHandover(setup: CleaningSetup): Handover {
     const o = setup.etlOptions || {};
     const sections: HandoverSection[] = [];
+    // The headers as the client's file has them (not columns that steps make).
+    const loose = (name: string) => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const cleaned = new Map(setup.columns.map(c => [loose(c.name), c]));
+    const expected = (setup.headers?.length ? setup.headers : setup.columns.map(c => c.name)).map(header => ({ header, column: cleaned.get(loose(header)) }));
 
     sections.push({
         id: 'file', title: 'The file it expects',
         intro: `A file is recognised by its columns, in any order. The setup is used when at least three quarters of the columns match.`,
         items: [],
-        columns: setup.columns.map(c => ({ name: c.name.replace(/_/g, ' '), kind: KIND[c.type] || c.type })),
+        columns: expected.map(e => ({ name: e.header, kind: e.column ? KIND[e.column.type] || e.column.type : 'Renamed or removed by the cleaning' })),
     });
 
     const steps = o.manualSteps || [];
@@ -114,14 +118,14 @@ export function buildHandover(setup: CleaningSetup): Handover {
         ],
     });
 
-    const metrics = setup.columns.filter(c => c.type === ColumnType.METRIC).length;
+    const metrics = expected.filter(e => e.column?.type === ColumnType.METRIC).length;
     return {
         title: setup.name,
         summary: `Every file with these columns is cleaned in exactly the same way, in your browser, so each month's numbers can be compared with the last. Your data never leaves your computer; this setup holds only the cleaning choices and the column names. It contains: ${describeSetup(setup).toLowerCase()}.`,
         facts: [
             { label: 'Set up', value: day(setup.createdAt) },
             ...(setup.updatedAt && setup.updatedAt !== setup.createdAt ? [{ label: 'Last changed', value: day(setup.updatedAt) }] : []),
-            { label: 'Columns', value: `${setup.columns.length} (${metrics} number${metrics === 1 ? '' : 's'})` },
+            { label: 'Columns', value: `${expected.length} (${metrics} number${metrics === 1 ? '' : 's'})` },
             { label: 'Used', value: setup.timesUsed ? `${setup.timesUsed} time${setup.timesUsed === 1 ? '' : 's'}${setup.lastUsedAt ? `, last on ${day(setup.lastUsedAt)}` : ''}` : 'Not used yet' },
         ],
         sections,
