@@ -317,10 +317,10 @@ function StepForm({ step, columns, rows, tables = [], onChange }: { step: Cleani
             const labels = new Set(rows.map(r => r[step.column || ''])).size;
             return (
                 <>
-                    <p className="qi-steps-warn"><Info className="h-3.5 w-3.5" aria-hidden /> Every other column says which row a value belongs to. Remove columns that differ on every row (an order number, say) first, or each row stays on its own.</p>
+                    {!step.groupBy && <p className="qi-steps-warn"><Info className="h-3.5 w-3.5" aria-hidden /> Every other column says which row a value belongs to, so a column that differs on every row (an order number, say) keeps each row on its own. Pick the columns below to choose.</p>}
                     <div className="qi-steps-row">
                         <Field title="New columns from" hint={step.column ? `${labels.toLocaleString('en-GB')} different value${labels === 1 ? '' : 's'} in the preview, so as many new columns. New values in a later file become new columns too.` : undefined}>
-                            <ColumnSelect ariaLabel="New columns from" value={step.column} columns={columns.filter(c => c.name !== step.valueColumn)} onChange={v => set({ column: v })} only={[ColumnType.DIMENSION, ColumnType.DATE, ColumnType.ID, ColumnType.BOOLEAN]} />
+                            <ColumnSelect ariaLabel="New columns from" value={step.column} columns={columns.filter(c => c.name !== step.valueColumn)} onChange={v => set({ column: v, groupBy: step.groupBy?.filter(x => x !== v) })} only={[ColumnType.DIMENSION, ColumnType.DATE, ColumnType.ID, ColumnType.BOOLEAN]} />
                         </Field>
                         <Field title="Fill them with">
                             <select className="qi-steps-input" aria-label="Fill them with" value={how} onChange={e => set({ how: e.target.value as NonNullable<CleaningStep['how']> })}>
@@ -332,6 +332,9 @@ function StepForm({ step, columns, rows, tables = [], onChange }: { step: Cleani
                                 <ColumnSelect ariaLabel="Values from" value={step.valueColumn} columns={columns.filter(c => c.name !== step.column)} onChange={v => set({ valueColumn: v })} only={how === 'first' || how === 'count' ? undefined : [ColumnType.METRIC]} />
                         </Field>
                     </div>
+                    <Field title="One row for each" hint={(step.groupBy?.length ?? 1) === 0 ? 'None picked gives a single row of totals.' : 'Columns not picked are left out of the result, so an order number no longer keeps every row apart.'}>
+                        <ColumnPicker value={step.groupBy || columns.filter(c => c.name !== step.column && c.name !== step.valueColumn && !c.name.startsWith('__')).map(c => c.name)} columns={columns.filter(c => c.name !== step.column && c.name !== step.valueColumn)} onChange={v => set({ groupBy: v })} />
+                    </Field>
                 </>
             );
         }

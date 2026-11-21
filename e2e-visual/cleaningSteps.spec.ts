@@ -171,6 +171,12 @@ for (const theme of ['light', 'dark'] as const) {
         await form.getByLabel('Fill them with').selectOption('sum');
         await form.getByLabel('Values from').selectOption('revenue');
         await expect(form.locator('.qi-steps-effect')).toContainText(/\d+ new columns/);
+        // One row per customer: leave the order date out.
+        const rowsFor = form.getByRole('group').last();
+        await rowsFor.getByRole('button', { name: /order.date/ }).click();
+        await expect(rowsFor.getByRole('button', { name: /customer/ })).toHaveAttribute('aria-pressed', 'true');
+        await expect(form.locator('.qi-steps-effect')).toContainText(/50 rows turned into [1-9] rows with \d+ new columns/);
+        await expect(form.locator('.qi-steps-effect')).toContainText("not kept: 'order id', 'order date'");
         await form.getByRole('button', { name: 'Add step' }).click();
         await expect(page.locator('.qi-steps-grid th').filter({ hasText: 'asha' })).toHaveCount(1);
 

@@ -38,9 +38,13 @@ jobs:
           # already carries the libraries Chromium needs.
           timeout 150 npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Capture screenshots
+        id: capture
         run: npx playwright test -c playwright.visual.config.ts ${{ github.event.inputs.grep && format('--grep "{0}"', github.event.inputs.grep) || '' }}
+        # Keep going so the screenshots (including failure shots) are still
+        # published; the last step turns the run red if any test failed.
         continue-on-error: true
       - name: Publish screenshots
+        if: always()
         run: |
           set -e
           BRANCH="visual-preview/${GITHUB_REF_NAME}"
@@ -56,3 +60,8 @@ jobs:
           git add -A
           git commit -q -m "Visual preview for ${GITHUB_SHA}"
           git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+      - name: Fail the run if any browser test failed
+        if: steps.capture.outcome == 'failure'
+        run: |
+          echo "::error::Browser tests failed. Screenshots (including zz-failed-*) are on visual-preview/${GITHUB_REF_NAME}."
+          exit 1

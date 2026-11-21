@@ -16,6 +16,27 @@ const longRows = [
 ];
 
 describe('turn rows into columns (pivot)', () => {
+    it('makes one row for each picked column, leaving out an identifier that differs on every row', () => {
+        const withIds = longRows.map((r, i) => ({ order_id: `A${i}`, ...r }));
+        const cols = [col('order_id', ColumnType.ID), ...longCols];
+        const s = step('pivot', { column: 'month', valueColumn: 'sales', how: 'sum', groupBy: ['store'] });
+        const out = applySteps(withIds, cols, [s]);
+        expect(out.rows.map(r => r.store)).toEqual(['Leeds', 'York', 'Hull']);
+        expect(out.columns.map(c => c.name)).not.toContain('order_id');
+        expect(out.results[0].text).toBe("6 rows turned into 3 rows with 4 new columns ('jan', 'feb', 'mar', 'blank'); not kept: 'order id'");
+        expect(describeStep(s)).toBe("Turn the values of 'month' into columns, filled with the total of 'sales', one row for each 'store'");
+        // Nothing picked: a single row of totals.
+        const one = applySteps(withIds, cols, [{ ...s, groupBy: [] }]);
+        expect(one.rows).toEqual([{ jan: 180, feb: 125, mar: 1000, blank: 7 }]);
+        // Before this choice existed, every other column was kept (saved setups unchanged).
+        expect(applySteps(withIds, cols, [{ ...s, groupBy: undefined }]).rows).toHaveLength(6);
+        // A missing picked column skips the step, as for any other step.
+        expect(applySteps(withIds, cols, [{ ...s, groupBy: ['branch'] }]).results[0].status).toBe('skipped');
+        // New steps start with the categories and dates, not identifiers or numbers.
+        const fresh = newStep('pivot', [...cols, col('day', ColumnType.DATE), col('city', ColumnType.DIMENSION)]);
+        expect(fresh).toMatchObject({ column: 'store', valueColumn: 'sales', groupBy: ['month', 'day', 'city'] });
+    });
+
     it('makes one column per value, one row per remaining combination, and keeps the grand total', () => {
         const out = applySteps(longRows, longCols, [step('pivot', { column: 'month', valueColumn: 'sales', how: 'sum' })]);
         expect(out.columns.map(c => [c.name, c.type])).toEqual([

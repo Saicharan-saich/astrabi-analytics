@@ -164,7 +164,7 @@ export function describeStep(step: CleaningStep): string {
         case 'date_part': return `New column '${step.name}' = ${PART_WORDS[step.part || 'month']} of ${word(step.column)}`;
         case 'unpivot': return `Turn the columns ${list(step.columns)} into rows ('${step.to || 'label'}', '${step.name || 'value'}')`;
         case 'group_by': return `Total by ${list(step.groupBy)}: ${(step.totals || []).map(t => `${HOW_WORDS[t.how]} of ${word(t.column)}`).join(', ')}`;
-        case 'pivot': return `Turn the values of ${word(step.column)} into columns, filled with ${step.how === 'count' ? 'the number of rows' : `the ${PIVOT_WORDS[step.how || 'sum']} ${word(step.valueColumn)}`}`;
+        case 'pivot': return `Turn the values of ${word(step.column)} into columns, filled with ${step.how === 'count' ? 'the number of rows' : `the ${PIVOT_WORDS[step.how || 'sum']} ${word(step.valueColumn)}`}${step.groupBy ? (step.groupBy.length ? `, one row for each ${list(step.groupBy)}` : ', in a single row') : ''}`;
         case 'combine': {
             const other = `'${tableLabel(step.source?.name || 'another file')}'`;
             if (step.mode === 'match') return `Bring ${step.columns?.length ? list(step.columns) : 'columns'} from ${other}, matching ${word(step.column)} to ${word(step.rightColumn)}`;
@@ -533,7 +533,11 @@ function runOne(step: CleaningStep, rows: Row[], columns: ColumnDefinition[], co
             const how = step.how || 'sum';
             // The value column is never a key, even when only counting rows.
             const valueName = step.valueColumn;
-            const keys = columns.filter(x => x.name !== labelName && x.name !== valueName && !x.name.startsWith('__'));
+            // The columns that say which row a value belongs to. Steps saved before
+            // this choice existed (no groupBy) keep every other column.
+            const others = columns.filter(x => x.name !== labelName && x.name !== valueName && !x.name.startsWith('__'));
+            const keys = step.groupBy ? others.filter(x => step.groupBy!.includes(x.name)) : others;
+            const dropped = step.groupBy ? others.filter(x => !step.groupBy!.includes(x.name)).map(x => x.name) : [];
             const labels: string[] = [];
             const seenLabels = new Set<string>();
             const groups = new Map<string, { first: Row; cells: Map<string, unknown[]> }>();
@@ -577,7 +581,7 @@ function runOne(step: CleaningStep, rows: Row[], columns: ColumnDefinition[], co
             }
             if (how === 'first') cols = cols.map(x => (names.includes(x.name) ? newColumn(x.name, inferType(out, x.name)) : x));
             const shown = names.slice(0, 4).map(word).join(', ') + (names.length > 4 ? ', …' : '');
-            return { rows: out, columns: cols, changed: 0, touched: names, text: `${plural(n, 'row')} turned into ${plural(out.length, 'row')} with ${plural(names.length, 'new column')} (${shown})` };
+            return { rows: out, columns: cols, changed: 0, touched: names, text: `${plural(n, 'row')} turned into ${plural(out.length, 'row')} with ${plural(names.length, 'new column')} (${shown})${dropped.length ? `; not kept: ${list(dropped.slice(0, 4))}${dropped.length > 4 ? ', …' : ''}` : ''}` };
         }
         case 'combine': {
             const other = findStepTable(step.source, context.tables)!;
@@ -771,7 +775,12 @@ export function newStep(kind: StepKind, columns: ColumnDefinition[]): CleaningSt
         case 'date_part': Object.assign(step, { column: first(ColumnType.DATE), part: 'month_name', name: '' }); break;
         case 'unpivot': Object.assign(step, { columns: [], to: 'month', name: 'value' }); break;
         case 'group_by': Object.assign(step, { groupBy: [first(ColumnType.DIMENSION)].filter(Boolean), totals: [{ column: first(ColumnType.METRIC) || '', how: 'sum', name: '' }] }); break;
-        case 'pivot': Object.assign(step, { column: first(ColumnType.DIMENSION), valueColumn: first(ColumnType.METRIC), how: 'sum' }); break;
+        case 'pivot': {
+            // One row per remaining category or date; identifiers and numbers are left out.
+            const label = first(ColumnType.DIMENSION);
+            Object.assign(step, { column: label, valueColumn: first(ColumnType.METRIC), how: 'sum', groupBy: columns.filter(c => (c.type === ColumnType.DIMENSION || c.type === ColumnType.DATE) && c.name !== label && !c.name.startsWith('__')).map(c => c.name) });
+            break;
+        }
         case 'combine': Object.assign(step, { mode: 'append', columns: [], name: '' }); break;
     }
     return step;
