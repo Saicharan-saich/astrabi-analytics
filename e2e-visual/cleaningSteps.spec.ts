@@ -173,8 +173,8 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(form.locator('.qi-steps-effect')).toContainText(/\d+ new columns/);
         // One row per customer: leave the order date out.
         const rowsFor = form.getByRole('group').last();
-        await rowsFor.getByRole('button', { name: /order.date/ }).click();
-        await expect(rowsFor.getByRole('button', { name: /customer/ })).toHaveAttribute('aria-pressed', 'true');
+        await rowsFor.getByRole('button', { name: 'order date', exact: true }).click();
+        await expect(rowsFor.getByRole('button', { name: 'customer', exact: true })).toHaveAttribute('aria-pressed', 'true');
         await expect(form.locator('.qi-steps-effect')).toContainText(/50 rows turned into [1-9] rows with \d+ new columns/);
         await expect(form.locator('.qi-steps-effect')).toContainText("not kept: 'order id', 'order date'");
         await form.getByRole('button', { name: 'Add step' }).click();
