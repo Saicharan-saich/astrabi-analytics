@@ -995,7 +995,12 @@ function App() {
         setDataset(updated);
         saveDatasetToDB(updated);
         const delta = rows.length - dataset.rows.length;
-        showToast(`${label} — done. ${delta === 0 ? 'Row count unchanged' : `${Math.abs(delta).toLocaleString()} row(s) ${delta > 0 ? 'added back' : 'removed'}`}.`);
+        // Steps that regroup or stack rows change the count without losing data.
+        const reshaped = (nextOptions.manualSteps || []).some(s => !s.off && (s.kind === 'pivot' || s.kind === 'group_by' || s.kind === 'unpivot' || (s.kind === 'combine' && s.mode !== 'match')));
+        const countNote = delta === 0 ? 'Row count unchanged'
+          : reshaped ? `Rows reshaped: ${dataset.rows.length.toLocaleString()} → ${rows.length.toLocaleString()}`
+          : `${Math.abs(delta).toLocaleString()} row(s) ${delta > 0 ? 'added back' : 'removed'}`;
+        showToast(`${label} — done. ${countNote}.`);
       } else if (event.data.type === 'ERROR') {
         setError(event.data.error || 'Re-running the cleaning failed.');
       }

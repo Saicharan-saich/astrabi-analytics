@@ -183,6 +183,7 @@ for (const theme of ['light', 'dark'] as const) {
         // The whole file is cleaned with the other file too.
         await page.getByRole('button', { name: 'Apply to the whole file' }).click();
         await expect(page.getByText('Not applied yet')).toHaveCount(0, { timeout: 30000 });
+        await expect(page.getByText(/Rows reshaped: 50 → [1-9]/)).toBeVisible();
         const list = page.locator('.qi-steps-list');
         await expect(list).toContainText("Bring columns from 'acme_regions', matching 'region' to 'region'");
         await expect(list.locator('.qi-steps-result').first()).toContainText(/\d+ of 50 rows found a match/);
