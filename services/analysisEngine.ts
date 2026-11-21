@@ -563,8 +563,10 @@ export const runAutomatedETL = (
     fileName: string,
     columnTypeOverrides?: Record<string, ColumnType>,
     etlOptions?: import('../types').EtlOptions,
+    /** Other loaded files, for steps that combine with one (never saved anywhere). */
+    stepTables?: import('./cleaningSteps').StepTable[],
 ): { rows: any[], logs: ETLLog[], columns: ColumnDefinition[], timeContext?: TimeContext, dimDate?: import('../types').DimDateRow[], stepBase?: import('../types').Dataset['stepBase'] } => {
-    const result = runETLPipeline(rawData, fileName, columnTypeOverrides, etlOptions);
+    const result = runETLPipeline(rawData, fileName, columnTypeOverrides, stepTables?.length ? { ...(etlOptions || {}), stepTables } : etlOptions);
     return {
         rows: result.rows,
         logs: result.logs,

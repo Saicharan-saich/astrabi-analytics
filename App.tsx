@@ -24,6 +24,7 @@ import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor, 
 import { useSetupStore } from './store/useSetupStore';
 import { startSetupSync, stopSetupSync } from './services/setupSync';
 import { appliedSetup as setupRecord, handSetKinds } from './utils/cleaningSetups';
+import { tablesForSteps } from './utils/stepTables';
 import type { AppliedSetup, CleaningSetup } from './types';
 import { buildAutoDashboard } from './services/autoDashboardBuilder';
 import { refreshLiveDataset } from './services/liveRefreshService';
@@ -806,7 +807,12 @@ function App() {
     };
 
     // Saved cleaning setups go with the file: one whose columns match cleans it.
-    worker.postMessage({ type: 'PROCESS_FILE', file, setups: useSetupStore.getState().setups });
+    // Files already loaded go too when a saved setup combines with one of them.
+    const savedSetups = useSetupStore.getState().setups;
+    worker.postMessage({
+      type: 'PROCESS_FILE', file, setups: savedSetups,
+      stepTables: tablesForSteps(savedSetups.flatMap(s => s.etlOptions?.manualSteps || []), useAppStore.getState().datasets),
+    });
   };
 
   const reprocessDatasetTypes = (
@@ -876,6 +882,7 @@ function App() {
       columnTypeOverrides: overrides,
       sourceColumnTypeOverrides,
       etlOptions: dataset.etlOptions,
+      stepTables: tablesForSteps(dataset.etlOptions?.manualSteps, useAppStore.getState().datasets, dataset.id),
     });
   };
 
@@ -928,6 +935,7 @@ function App() {
       fileName: dataset.name,
       columnTypeOverrides: overrides,
       etlOptions: dataset.etlOptions,
+      stepTables: tablesForSteps(dataset.etlOptions?.manualSteps, useAppStore.getState().datasets, dataset.id),
     });
   };
 
@@ -1000,6 +1008,7 @@ function App() {
       fileName: dataset.name,
       columnTypeOverrides: Object.keys(overrides).length ? overrides : undefined,
       etlOptions: nextOptions,
+      stepTables: tablesForSteps(nextOptions.manualSteps, useAppStore.getState().datasets, dataset.id),
     });
   };
 
@@ -1421,6 +1430,7 @@ function App() {
         // Every refresh is cleaned with the same choices and steps as before.
         etlOptions: ds.etlOptions,
         columnTypeOverrides: Object.keys(handSetKinds(ds)).length ? handSetKinds(ds) : undefined,
+        stepTables: tablesForSteps(ds.etlOptions?.manualSteps, useAppStore.getState().datasets, ds.id),
       });
     } catch (err: any) {
       console.error('[App] Live refresh failed:', err);

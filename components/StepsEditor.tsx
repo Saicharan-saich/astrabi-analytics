@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     ArrowUpDown, Calculator, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, CircleDashed, Columns3, Copy, Eye, EyeOff,
-    Filter, GitBranch, Info, Layers, Link2, Loader2, Pencil, Plus, Ruler, Search, SlidersHorizontal, Tag, Trash2, Type, X,
+    Filter, GitBranch, Info, Layers, LayoutGrid, Link2, Loader2, Pencil, Plus, Rows3, Ruler, Search, SlidersHorizontal, Tag, Trash2, Type, X,
 } from 'lucide-react';
 import { ColumnType, type CleaningStep, type ColumnDefinition, type Dataset, type EtlOptions, type FilterOp, type StepKind } from '../types';
-import { applySteps, describeStep, newStep, STEP_GROUPS, stepProblem, type StepResult } from '../services/cleaningSteps';
+import { applySteps, describeStep, findStepTable, newStep, sourceOf, STEP_GROUPS, stepProblem, tableLabel, type StepContext, type StepResult, type StepTable } from '../services/cleaningSteps';
+import { useAppStore } from '../store/useAppStore';
+import { asStepTable } from '../utils/stepTables';
 
 /**
  * Your steps — clean by hand, Power Query style, for people who are not data
@@ -24,7 +26,7 @@ const ICONS: Record<StepKind, React.ComponentType<{ className?: string }>> = {
     filter_rows: Filter, remove_duplicates: Copy, remove_columns: Trash2, keep_columns: Columns3, rename_column: Pencil,
     change_type: SlidersHorizontal, fill_blanks: CircleDashed, find_replace: Search, group_values: Tag, tidy_text: Type,
     round_numbers: Ruler, split_column: GitBranch, join_columns: Link2, calculated_column: Calculator, date_part: CalendarDays,
-    unpivot: ArrowUpDown, group_by: Layers,
+    unpivot: ArrowUpDown, group_by: Layers, pivot: LayoutGrid, combine: Rows3,
 };
 const KIND_LABEL: Record<string, string> = Object.fromEntries(STEP_GROUPS.flatMap(g => g.kinds.map(k => [k.kind, k.label])));
 const TYPE_WORD: Record<string, string> = { METRIC: 'Number', DIMENSION: 'Category', DATE: 'Date', ID: 'Identifier', BOOLEAN: 'Yes/No' };
@@ -100,7 +102,7 @@ function topValues(rows: Record<string, any>[], column?: string, limit = 40): { 
 
 /* ── the form for one step ────────────────────────────────────────── */
 
-function StepForm({ step, columns, rows, onChange }: { step: CleaningStep; columns: ColumnDefinition[]; rows: Record<string, any>[]; onChange: (s: CleaningStep) => void }) {
+function StepForm({ step, columns, rows, tables = [], onChange }: { step: CleaningStep; columns: ColumnDefinition[]; rows: Record<string, any>[]; tables?: StepTable[]; onChange: (s: CleaningStep) => void }) {
     const set = (patch: Partial<CleaningStep>) => onChange({ ...step, ...patch });
     const column = columns.find(c => c.name === step.column);
     const numbersOrDates = column?.type === ColumnType.METRIC || column?.type === ColumnType.DATE;
@@ -310,6 +312,77 @@ function StepForm({ step, columns, rows, onChange }: { step: CleaningStep; colum
                 </>
             );
         }
+        case 'pivot': {
+            const how = step.how || 'sum';
+            const labels = new Set(rows.map(r => r[step.column || ''])).size;
+            return (
+                <>
+                    <p className="qi-steps-warn"><Info className="h-3.5 w-3.5" aria-hidden /> Every other column says which row a value belongs to. Remove columns that differ on every row (an order number, say) first, or each row stays on its own.</p>
+                    <div className="qi-steps-row">
+                        <Field title="New columns from" hint={step.column ? `${labels.toLocaleString('en-GB')} different value${labels === 1 ? '' : 's'} in the preview, so as many new columns. New values in a later file become new columns too.` : undefined}>
+                            <ColumnSelect ariaLabel="New columns from" value={step.column} columns={columns.filter(c => c.name !== step.valueColumn)} onChange={v => set({ column: v })} only={[ColumnType.DIMENSION, ColumnType.DATE, ColumnType.ID, ColumnType.BOOLEAN]} />
+                        </Field>
+                        <Field title="Fill them with">
+                            <select className="qi-steps-input" aria-label="Fill them with" value={how} onChange={e => set({ how: e.target.value as NonNullable<CleaningStep['how']> })}>
+                                <option value="sum">The total of</option><option value="average">The average of</option><option value="min">The lowest</option><option value="max">The highest</option>
+                                <option value="first">The first value of</option><option value="count">The number of rows</option>
+                            </select>
+                        </Field>
+                        <Field title={how === 'count' ? 'Leave out' : 'Values from'} hint={how === 'count' ? 'A column to leave out of the rows, e.g. the amount being counted.' : undefined}>
+                                <ColumnSelect ariaLabel="Values from" value={step.valueColumn} columns={columns.filter(c => c.name !== step.column)} onChange={v => set({ valueColumn: v })} only={how === 'first' || how === 'count' ? undefined : [ColumnType.METRIC]} />
+                        </Field>
+                    </div>
+                </>
+            );
+        }
+        case 'combine': {
+            const other = findStepTable(step.source, tables);
+            const otherColumns = (other?.columns || []).filter(c => !c.name.startsWith('__'));
+            const pickFile = (name: string) => {
+                const t = tables.find(x => x.name === name);
+                if (!t) return;
+                const sameKey = t.columns.find(c => c.name === step.column)?.name;
+                set({ source: sourceOf(t), rightColumn: sameKey, columns: [] });
+            };
+            return (
+                <>
+                    {!tables.length && (
+                        <p className="qi-steps-warn"><Info className="h-3.5 w-3.5" aria-hidden /> Upload the other file first; it then appears here. The step remembers it by its name and columns, never its rows, and uses it again whenever it is loaded.</p>
+                    )}
+                    <div className="qi-steps-row">
+                        <Field title="How">
+                            <select className="qi-steps-input" aria-label="How to combine" value={step.mode || 'append'} onChange={e => set({ mode: e.target.value as 'append' | 'match' })}>
+                                <option value="append">Add its rows underneath</option>
+                                <option value="match">Bring columns across by a matching column</option>
+                            </select>
+                        </Field>
+                        <Field title="Other file">
+                            <select className="qi-steps-input" aria-label="Other file" value={other?.name || ''} onChange={e => pickFile(e.target.value)}>
+                                {!other && <option value="">{step.source ? `${tableLabel(step.source.name)} (not loaded)` : 'Pick a file'}</option>}
+                                {tables.map(t => <option key={t.name} value={t.name}>{tableLabel(t.name)} · {t.rows.length.toLocaleString('en-GB')} rows</option>)}
+                            </select>
+                        </Field>
+                    </div>
+                    {(step.mode || 'append') === 'append' ? (
+                        <Field title="Mark where each row came from (optional)" hint="Adds a column with the file each row came from. Columns are lined up by name; any only in one file are left blank for the other's rows.">
+                            <Text ariaLabel="Mark where each row came from" value={step.name} onChange={v => set({ name: v })} placeholder="e.g. Source" />
+                        </Field>
+                    ) : (
+                        <>
+                            <div className="qi-steps-row">
+                                <Field title="Matching column in this file"><ColumnSelect ariaLabel="Matching column in this file" value={step.column} columns={columns} onChange={v => set({ column: v })} /></Field>
+                                <Field title="Matching column in the other file">
+                                    <ColumnSelect ariaLabel="Matching column in the other file" value={step.rightColumn} columns={otherColumns} onChange={v => set({ rightColumn: v, columns: (step.columns || []).filter(x => x !== v) })} />
+                                </Field>
+                            </div>
+                            <Field title="Columns to bring" hint="None picked brings all of them. Rows with no match get blanks; no row is ever doubled, so totals stay right.">
+                                <ColumnPicker value={step.columns} columns={otherColumns.filter(c => c.name !== step.rightColumn)} onChange={v => set({ columns: v })} />
+                            </Field>
+                        </>
+                    )}
+                </>
+            );
+        }
         default: return null;
     }
 }
@@ -365,6 +438,10 @@ export const StepsEditor: React.FC<Props> = ({ dataset, onApply, pending = null 
         : { rows: dataset.rows.slice(0, 5000), columns: dataset.columns }), [dataset.stepBase, dataset.rows, dataset.columns, saved.length]);
     const truncated = (dataset.totalRows || dataset.rows.length) > base.rows.length || base.rows.length >= 5000;
     const missingBase = saved.length > 0 && !dataset.stepBase;
+    // Other loaded files, for combine steps (cleaned rows, this browser only).
+    const datasets = useAppStore(state => state.datasets);
+    const tables = useMemo(() => datasets.filter(d => d.id !== dataset.id && Array.isArray(d.rows)).map(asStepTable), [datasets, dataset.id]);
+    const context: StepContext = useMemo(() => ({ tables, fileName: dataset.name }), [tables, dataset.name]);
 
     // The steps as they will run, with the one being edited in place.
     const working = useMemo(() => {
@@ -374,9 +451,9 @@ export const StepsEditor: React.FC<Props> = ({ dataset, onApply, pending = null 
         return next;
     }, [draft, editing]);
     const upTo = editing ? editing.index + 1 : working.length;
-    const before = useMemo(() => applySteps(base.rows, base.columns, working.slice(0, editing ? editing.index : working.length)), [base, working, editing]);
-    const after = useMemo(() => (editing ? applySteps(base.rows, base.columns, working.slice(0, upTo)) : before), [base, working, upTo, editing, before]);
-    const results = useMemo(() => applySteps(base.rows, base.columns, working).results, [base, working]);
+    const before = useMemo(() => applySteps(base.rows, base.columns, working.slice(0, editing ? editing.index : working.length), context), [base, working, editing, context]);
+    const after = useMemo(() => (editing ? applySteps(base.rows, base.columns, working.slice(0, upTo), context) : before), [base, working, upTo, editing, before, context]);
+    const results = useMemo(() => applySteps(base.rows, base.columns, working, context).results, [base, working, context]);
     const resultOf = (id: string): StepResult | undefined => results.find(r => r.id === id);
 
     const dirty = !same(draft, saved);
@@ -483,7 +560,7 @@ export const StepsEditor: React.FC<Props> = ({ dataset, onApply, pending = null 
                                 <strong>{editing.isNew ? 'New step' : `Step ${editing.index + 1}`}: {KIND_LABEL[editing.step.kind]}</strong>
                                 <button type="button" className="qi-steps-icon" aria-label="Cancel" onClick={() => setEditing(null)}><X className="h-4 w-4" /></button>
                             </header>
-                            <StepForm step={editing.step} columns={before.columns} rows={before.rows} onChange={step => setEditing({ ...editing, step })} />
+                            <StepForm step={editing.step} columns={before.columns} rows={before.rows} tables={tables} onChange={step => setEditing({ ...editing, step })} />
                             <Field title="Why is this step needed? (optional)" hint="Shown with the step in the Checklist, so anyone can see why it is done.">
                                 <Text value={editing.step.note} onChange={v => setEditing({ ...editing, step: { ...editing.step, note: v || undefined } })} placeholder="e.g. The client's test orders start with TEST" ariaLabel="Why is this step needed?" />
                             </Field>

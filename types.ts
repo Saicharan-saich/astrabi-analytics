@@ -120,7 +120,7 @@ export type StepKind =
   | 'remove_columns' | 'keep_columns' | 'rename_column' | 'change_type'
   | 'fill_blanks' | 'find_replace' | 'group_values' | 'tidy_text' | 'round_numbers'
   | 'split_column' | 'join_columns' | 'calculated_column' | 'date_part'
-  | 'unpivot' | 'group_by';
+  | 'unpivot' | 'group_by' | 'pivot' | 'combine';
 
 export type FilterOp = 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with'
   | 'greater' | 'greater_eq' | 'less' | 'less_eq' | 'between' | 'blank' | 'not_blank' | 'one_of';
@@ -175,6 +175,17 @@ export interface CleaningStep {
   /** group_by */
   groupBy?: string[];
   totals?: { column: string; how: 'sum' | 'average' | 'count' | 'min' | 'max' | 'count_distinct'; name: string }[];
+  /** pivot: the column whose values fill the new columns, and how several values for one cell combine. */
+  valueColumn?: string;
+  how?: 'sum' | 'average' | 'count' | 'min' | 'max' | 'first';
+  /**
+   * combine: 'append' adds the other file's rows underneath; 'match' brings
+   * columns across from the other file where a key matches (column = key here,
+   * rightColumn = key there, columns = what to bring). The other file is
+   * remembered by name and its columns, never its rows.
+   */
+  mode?: 'append' | 'match';
+  source?: { name: string; headers: string[] };
 }
 /**
  * A saved cleaning setup: the cleaning choices for one kind of file (a client's

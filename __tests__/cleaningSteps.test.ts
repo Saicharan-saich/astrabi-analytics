@@ -121,7 +121,7 @@ describe('cleaning steps', () => {
 
     it('offers every kind, each with defaults and a clear "what is missing"', () => {
         const kinds = STEP_GROUPS.flatMap(g => g.kinds.map(k => k.kind));
-        expect(kinds).toHaveLength(17);
+        expect(kinds).toHaveLength(19);
         for (const kind of kinds) {
             const fresh = newStep(kind, columns);
             expect(typeof describeStep(fresh)).toBe('string');

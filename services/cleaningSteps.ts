@@ -17,6 +17,40 @@ import { parseLocaleNumber } from './etlHardening';
 
 type Row = Record<string, any>;
 
+/** Another file loaded in the workspace, for the combine step (cleaned rows and columns). */
+export interface StepTable { name: string; rows: Row[]; columns: ColumnDefinition[] }
+/** What the steps can reach besides the table itself. */
+export interface StepContext { tables?: StepTable[]; fileName?: string }
+
+/** "Regions 2026.xlsx" → "Regions 2026". */
+export const tableLabel = (name: string) => String(name || '').replace(/\.(csv|tsv|txt|xlsx|xlsm|xls|json|parquet)$/i, '').trim() || String(name || '');
+const looseName = (name: string) => tableLabel(name).toLowerCase().replace(/[^a-z0-9]+/g, '');
+const looseColumn = (name: string) => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/**
+ * The loaded file a combine step means: the same name first (ignoring the
+ * extension, case and spacing), otherwise the file whose columns match best
+ * (at least three in four), so next month's "regions_v2.csv" is still found.
+ */
+export function findStepTable(source: CleaningStep['source'], tables: StepTable[] = []): StepTable | null {
+    if (!source) return null;
+    const byName = tables.find(t => looseName(t.name) === looseName(source.name));
+    if (byName) return byName;
+    const want = new Set((source.headers || []).map(looseColumn));
+    if (!want.size) return null;
+    let best: StepTable | null = null, bestScore = 0;
+    for (const t of tables) {
+        const have = new Set(t.columns.map(c => looseColumn(c.name)));
+        const shared = [...want].filter(h => have.has(h)).length;
+        const score = shared / new Set([...want, ...have]).size;
+        if (score > bestScore) { best = t; bestScore = score; }
+    }
+    return bestScore >= 0.75 ? best : null;
+}
+
+/** The step's record of a file: its name and columns, never its rows. */
+export const sourceOf = (table: StepTable): NonNullable<CleaningStep['source']> => ({ name: table.name, headers: table.columns.map(c => c.name).filter(n => !n.startsWith('__')) });
+
 export interface StepResult {
     id: string;
     /** Ran, was switched off, or could not run (a column is missing). */
@@ -90,6 +124,7 @@ const KIND_WORDS: Record<string, string> = { METRIC: 'a number', DIMENSION: 'a c
 const FILL_WORDS: Record<string, string> = { zero: '0', down: 'the value above', up: 'the value below', average: 'the average', median: 'the middle value', most_common: 'the most common value' };
 const PART_WORDS: Record<string, string> = { year: 'year', quarter: 'quarter', month: 'month', month_name: 'month name', year_month: 'year and month', week: 'week', weekday: 'day of the week', day: 'day of the month' };
 const HOW_WORDS: Record<string, string> = { sum: 'total', average: 'average', count: 'count', min: 'lowest', max: 'highest', count_distinct: 'number of different' };
+const PIVOT_WORDS: Record<string, string> = { sum: 'total of', average: 'average of', min: 'lowest', max: 'highest', first: 'first value of', count: 'number of rows' };
 const OPERATOR_WORDS: Record<string, string> = { '+': '+', '-': '−', '*': '×', '/': '÷', pct_of: 'as a % of', pct_change: 'change % from' };
 
 /** One plain sentence for a step, e.g. "Remove rows where 'region' is blank". */
@@ -129,13 +164,22 @@ export function describeStep(step: CleaningStep): string {
         case 'date_part': return `New column '${step.name}' = ${PART_WORDS[step.part || 'month']} of ${word(step.column)}`;
         case 'unpivot': return `Turn the columns ${list(step.columns)} into rows ('${step.to || 'label'}', '${step.name || 'value'}')`;
         case 'group_by': return `Total by ${list(step.groupBy)}: ${(step.totals || []).map(t => `${HOW_WORDS[t.how]} of ${word(t.column)}`).join(', ')}`;
+        case 'pivot': return `Turn the values of ${word(step.column)} into columns, filled with ${step.how === 'count' ? 'the number of rows' : `the ${PIVOT_WORDS[step.how || 'sum']} ${word(step.valueColumn)}`}`;
+        case 'combine': {
+            const other = `'${tableLabel(step.source?.name || 'another file')}'`;
+            if (step.mode === 'match') return `Bring ${step.columns?.length ? list(step.columns) : 'columns'} from ${other}, matching ${word(step.column)} to ${word(step.rightColumn)}`;
+            return `Add the rows of ${other} underneath`;
+        }
         default: return 'A step';
     }
 }
 
 /** Every column a step reads (to report steps a new file cannot run). */
 export function columnsOfStep(step: CleaningStep): string[] {
+    // A combine step names the other file's columns too; only the key is in this one.
+    if (step.kind === 'combine') return step.mode === 'match' && step.column ? [step.column] : [];
     const out = new Set<string>();
+    if (step.valueColumn) out.add(step.valueColumn);
     if (step.column) out.add(step.column);
     for (const c of step.columns || []) out.add(c);
     if (step.rightColumn) out.add(step.rightColumn);
@@ -215,7 +259,7 @@ function datePart(value: unknown, part: NonNullable<CleaningStep['part']>): stri
 
 interface Ran { rows: Row[]; columns: ColumnDefinition[]; changed: number; text: string; touched: string[]; removed?: Row[] }
 
-function runOne(step: CleaningStep, rows: Row[], columns: ColumnDefinition[]): Ran {
+function runOne(step: CleaningStep, rows: Row[], columns: ColumnDefinition[], context: StepContext = {}): Ran {
     const col = (name?: string) => columns.find(c => c.name === name);
     const c = col(step.column);
     const n = rows.length;
@@ -484,6 +528,127 @@ function runOne(step: CleaningStep, rows: Row[], columns: ColumnDefinition[]): R
             }
             return { rows: out, columns: cols, changed: 0, touched: [...by, ...names], text: `${plural(n, 'row')} totalled into ${plural(out.length, 'row')}` };
         }
+        case 'pivot': {
+            const labelName = step.column!;
+            const how = step.how || 'sum';
+            // The value column is never a key, even when only counting rows.
+            const valueName = step.valueColumn;
+            const keys = columns.filter(x => x.name !== labelName && x.name !== valueName && !x.name.startsWith('__'));
+            const labels: string[] = [];
+            const seenLabels = new Set<string>();
+            const groups = new Map<string, { first: Row; cells: Map<string, unknown[]> }>();
+            for (const r of rows) {
+                const lab = isBlankIn(c, r[labelName]) ? 'blank' : text(r[labelName]).trim();
+                if (!seenLabels.has(lab)) {
+                    seenLabels.add(lab); labels.push(lab);
+                    if (labels.length > MAX_PIVOT_COLUMNS) throw new Error(`${word(labelName)} has more than ${MAX_PIVOT_COLUMNS} different values, too many to turn into columns`);
+                }
+                const k = JSON.stringify(keys.map(x => r[x.name] ?? null));
+                let g = groups.get(k);
+                if (!g) { g = { first: r, cells: new Map() }; groups.set(k, g); }
+                const list = g.cells.get(lab);
+                const v = valueName && how !== 'count' ? r[valueName] : 1;
+                if (list) list.push(v); else g.cells.set(lab, [v]);
+            }
+            let cols = keys.map(x => ({ ...x }));
+            const names = labels.map(lab => { const nm = columnNameFor(lab, cols); cols = [...cols, newColumn(nm, ColumnType.METRIC)]; return nm; });
+            const out: Row[] = [];
+            for (const g of groups.values()) {
+                const row: Row = {};
+                for (const x of keys) row[x.name] = g.first[x.name];
+                labels.forEach((lab, i) => {
+                    const vals = g.cells.get(lab);
+                    let v: unknown = null;
+                    if (vals) {
+                        if (how === 'count') v = vals.length;
+                        else if (how === 'first') v = vals.find(x => !isBlankValue(x)) ?? null;
+                        else {
+                            const nums = vals.map(toNumber).filter((x): x is number => x !== null);
+                            if (nums.length) {
+                                const total = nums.reduce((a, b) => a + b, 0);
+                                v = how === 'sum' ? total : how === 'average' ? total / nums.length : how === 'min' ? Math.min(...nums) : Math.max(...nums);
+                                v = Math.round((v as number) * 1e6) / 1e6;
+                            }
+                        }
+                    }
+                    row[names[i]] = v;
+                });
+                out.push(row);
+            }
+            if (how === 'first') cols = cols.map(x => (names.includes(x.name) ? newColumn(x.name, inferType(out, x.name)) : x));
+            const shown = names.slice(0, 4).map(word).join(', ') + (names.length > 4 ? ', …' : '');
+            return { rows: out, columns: cols, changed: 0, touched: names, text: `${plural(n, 'row')} turned into ${plural(out.length, 'row')} with ${plural(names.length, 'new column')} (${shown})` };
+        }
+        case 'combine': {
+            const other = findStepTable(step.source, context.tables)!;
+            const otherLabel = `'${tableLabel(other.name)}'`;
+            const otherCol = (name: string) => other.columns.find(x => x.name === name);
+            if (step.mode === 'match') {
+                const key = (v: unknown) => text(v).trim().toLowerCase();
+                const theirKey = step.rightColumn!;
+                const bring = (step.columns?.length ? step.columns : other.columns.map(x => x.name).filter(x => x !== theirKey && !x.startsWith('__'))).filter(x => otherCol(x));
+                const lookup = new Map<string, Row>();
+                let repeated = 0;
+                for (const r of other.rows) {
+                    const k = key(r[theirKey]);
+                    if (!k) continue;
+                    if (lookup.has(k)) repeated++; else lookup.set(k, r);
+                }
+                let cols = columns;
+                const names = bring.map(x => { const nm = columnNameFor(x, cols); const from = otherCol(x)!; cols = [...cols, { ...from, name: nm, originalType: 'step' }]; return nm; });
+                let matched = 0;
+                const out = rows.map(r => {
+                    const hit = lookup.get(key(r[step.column!]));
+                    if (hit) matched++;
+                    const row = { ...r };
+                    bring.forEach((x, i) => { row[names[i]] = hit ? hit[x] ?? null : null; });
+                    return row;
+                });
+                const missed = n - matched;
+                return {
+                    rows: out, columns: cols, changed: matched, touched: [step.column!, ...names],
+                    text: `${plural(names.length, 'column')} brought from ${otherLabel}; ${matched.toLocaleString('en-GB')} of ${plural(n, 'row')} found a match${missed ? `, ${missed.toLocaleString('en-GB')} did not (left blank)` : ''}${repeated ? `. ${otherLabel} repeats ${plural(repeated, 'key')}; the first row for each is used, so no rows are doubled` : ''}`,
+                };
+            }
+            // Append: line the other file's columns up with these by name.
+            const mine = new Map(columns.map(x => [looseColumn(x.name), x]));
+            const mapping = new Map<string, string>();
+            let cols = columns;
+            const onlyThere: string[] = [];
+            for (const x of other.columns) {
+                if (x.name.startsWith('__')) continue;
+                const here = mine.get(looseColumn(x.name));
+                if (here) mapping.set(x.name, here.name);
+                else { const nm = columnNameFor(x.name, cols); cols = [...cols, { ...x, name: nm, originalType: 'step' }]; mapping.set(x.name, nm); onlyThere.push(nm); }
+            }
+            const covered = new Set(mapping.values());
+            const onlyHere = columns.filter(x => !covered.has(x.name) && !x.name.startsWith('__')).map(x => x.name);
+            const typeOf = new Map(cols.map(x => [x.name, x.type]));
+            const label = step.name ? columnNameFor(step.name, cols) : '';
+            if (label) cols = [...cols, newColumn(label, ColumnType.DIMENSION)];
+            const thisLabel = tableLabel(context.fileName || 'this file');
+            const out: Row[] = rows.map(r => {
+                const row: Row = { ...r };
+                for (const nm of onlyThere) row[nm] = null;
+                if (label) row[label] = thisLabel;
+                return row;
+            });
+            for (const r of other.rows) {
+                const row: Row = {};
+                for (const x of cols) row[x.name] = null;
+                for (const [from, to] of mapping) {
+                    const v = r[from];
+                    row[to] = typeOf.get(to) === ColumnType.METRIC && typeof v !== 'number' ? toNumber(v) : v ?? null;
+                }
+                if (label) row[label] = tableLabel(other.name);
+                out.push(row);
+            }
+            const notes = [
+                onlyThere.length ? `${plural(onlyThere.length, 'column')} only in ${otherLabel} (${list(onlyThere.slice(0, 4))}${onlyThere.length > 4 ? ', …' : ''}), blank for this file's rows` : '',
+                onlyHere.length ? `${plural(onlyHere.length, 'column')} not in ${otherLabel} (${list(onlyHere.slice(0, 4))}${onlyHere.length > 4 ? ', …' : ''}), blank for its rows` : '',
+            ].filter(Boolean);
+            return { rows: out, columns: cols, changed: 0, touched: [...onlyThere, ...(label ? [label] : [])], text: `${plural(other.rows.length, 'row')} added from ${otherLabel}; ${plural(out.length, 'row')} now${notes.length ? `. ${notes.join('; ')}` : ''}` };
+        }
         default:
             return { rows, columns, changed: 0, touched: [], text: 'Unknown step' };
     }
@@ -495,8 +660,18 @@ function missingFor(step: CleaningStep, columns: ColumnDefinition[]): string[] {
     return columnsOfStep(step).filter(c => !have.has(c));
 }
 
+/** Why a combine step cannot run here (the other file is not loaded, or lacks its key). */
+function combineProblem(step: CleaningStep, context: StepContext): string {
+    if (step.kind !== 'combine') return '';
+    const name = `'${tableLabel(step.source?.name || 'the other file')}'`;
+    const other = findStepTable(step.source, context.tables);
+    if (!other) return `Skipped: the file ${name} is not loaded. Upload it too, then clean again`;
+    if (step.mode === 'match' && !other.columns.some(c => c.name === step.rightColumn)) return `Skipped: the file ${name} has no column ${word(step.rightColumn)}`;
+    return '';
+}
+
 /** Run the steps in order. Each step logs what it did, in plain words. */
-export function applySteps(rows: Row[], columns: ColumnDefinition[], steps: CleaningStep[] = []): { rows: Row[]; columns: ColumnDefinition[]; logs: ETLLog[]; results: StepResult[] } {
+export function applySteps(rows: Row[], columns: ColumnDefinition[], steps: CleaningStep[] = [], context: StepContext = {}): { rows: Row[]; columns: ColumnDefinition[]; logs: ETLLog[]; results: StepResult[] } {
     const logs: ETLLog[] = [];
     const results: StepResult[] = [];
     let current = rows, cols = columns;
@@ -508,14 +683,15 @@ export function applySteps(rows: Row[], columns: ColumnDefinition[], steps: Clea
             return;
         }
         const missing = missingFor(step, cols);
-        if (missing.length) {
-            const why = `Skipped: this file has no column ${list(missing)}`;
+        const notLoaded = missing.length ? '' : combineProblem(step, context);
+        if (missing.length || notLoaded) {
+            const why = notLoaded || `Skipped: this file has no column ${list(missing)}`;
             results.push({ id: step.id, status: 'skipped', text: why, rowsBefore: before, rowsAfter: before, changed: 0, columns: [] });
             logs.push({ step: 'Your Step', stepNumber: 6, status: 'info', timestamp: Date.now(), details: `Step ${index + 1}, "${what}": ${why.toLowerCase()}.`, affectedColumns: missing, ...(step.note ? { reason: step.note } : {}) });
             return;
         }
         let ran: Ran;
-        try { ran = runOne(step, current, cols); }
+        try { ran = runOne(step, current, cols, context); }
         catch (error: any) {
             const why = `Could not run: ${error?.message || 'unexpected value'}`;
             results.push({ id: step.id, status: 'skipped', text: why, rowsBefore: before, rowsAfter: before, changed: 0, columns: [] });
@@ -563,10 +739,15 @@ export const STEP_GROUPS: { title: string; kinds: { kind: StepKind; label: strin
     ] },
     { title: 'Reshape', kinds: [
         { kind: 'unpivot', label: 'Turn columns into rows', hint: 'One column per month → a month column and a value column' },
+        { kind: 'pivot', label: 'Turn rows into columns', hint: 'A month column and a value column → one column per month' },
         { kind: 'group_by', label: 'Group and total', hint: 'One row per group; changes what a row means' },
+    ] },
+    { title: 'Other files', kinds: [
+        { kind: 'combine', label: 'Combine with another file', hint: 'Add its rows underneath, or bring its columns across by a matching column' },
     ] },
 ];
 
+const MAX_PIVOT_COLUMNS = 100;
 const newId = () => `step_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
 /** A new step of a kind, with sensible defaults for this table. */
@@ -590,6 +771,8 @@ export function newStep(kind: StepKind, columns: ColumnDefinition[]): CleaningSt
         case 'date_part': Object.assign(step, { column: first(ColumnType.DATE), part: 'month_name', name: '' }); break;
         case 'unpivot': Object.assign(step, { columns: [], to: 'month', name: 'value' }); break;
         case 'group_by': Object.assign(step, { groupBy: [first(ColumnType.DIMENSION)].filter(Boolean), totals: [{ column: first(ColumnType.METRIC) || '', how: 'sum', name: '' }] }); break;
+        case 'pivot': Object.assign(step, { column: first(ColumnType.DIMENSION), valueColumn: first(ColumnType.METRIC), how: 'sum' }); break;
+        case 'combine': Object.assign(step, { mode: 'append', columns: [], name: '' }); break;
     }
     return step;
 }
@@ -611,6 +794,8 @@ export function stepProblem(step: CleaningStep): string {
         case 'date_part': return need(step.column, 'Pick a date column') || need((step.name ?? '').trim(), 'Name the new column');
         case 'unpivot': return need((step.columns?.length || 0) >= 2, 'Pick two or more columns');
         case 'group_by': return need(step.groupBy?.length, 'Pick what to group by') || need((step.totals || []).length, 'Add a total');
+        case 'pivot': return need(step.column, 'Pick the column whose values become columns') || need(step.how === 'count' || step.valueColumn, 'Pick the column with the values') || need(step.column !== step.valueColumn, 'Pick two different columns');
+        case 'combine': return need(step.source, 'Pick the other file') || need(step.mode !== 'match' || step.column, 'Pick the matching column in this file') || need(step.mode !== 'match' || step.rightColumn, 'Pick the matching column in the other file');
         default: return '';
     }
 }

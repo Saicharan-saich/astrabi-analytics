@@ -20,7 +20,7 @@ import { generateDimDate } from './dimDateGenerator';
 import { checkTotals, describeTotals } from './totalsCheck';
 import { convertMixedUnits, runQualityChecks } from './etlQualityChecks';
 import { amountsIn, applyBlankDecisions, profileBlanks } from './blankValues';
-import { applySteps } from './cleaningSteps';
+import { applySteps, type StepTable } from './cleaningSteps';
 
 /** Rows kept from before the person's own steps, for live previews in the steps editor. */
 const STEP_PREVIEW_ROWS = 5000;
@@ -2306,7 +2306,7 @@ export function runETLPipeline(
     rawData: Record<string, any>[],
     _fileName: string,
     columnTypeOverrides?: Record<string, ColumnType>,
-    options?: { preserveRowMultiplicity?: boolean } & EtlOptions,
+    options?: { preserveRowMultiplicity?: boolean; stepTables?: StepTable[] } & EtlOptions,
 ): {
     rows: Record<string, any>[];
     columns: ColumnDefinition[];
@@ -2416,7 +2416,7 @@ export function runETLPipeline(
     let stepBase: { rows: Record<string, any>[]; columns: ColumnDefinition[] } | undefined;
     if (etlOptions.manualSteps?.length) {
         stepBase = { rows: rows.slice(0, STEP_PREVIEW_ROWS), columns: finalColumns.map(c => ({ ...c })) };
-        const ran = applySteps(rows, finalColumns, etlOptions.manualSteps);
+        const ran = applySteps(rows, finalColumns, etlOptions.manualSteps, { tables: options?.stepTables, fileName: _fileName });
         rows = ran.rows;
         stepColumns = ran.columns;
         allLogs.push(...ran.logs);

@@ -140,4 +140,52 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(page.locator('.qi-steps-grid th').filter({ hasText: 'profit' })).toHaveCount(1);
         await shoot(page, `95-steps-replayed-${theme}`);
     });
+    test(`your steps: combine with another file and turn rows into columns (${theme})`, async ({ page }) => {
+        test.setTimeout(240_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'DASHBOARD');
+        await page.route('**/api/llm/chat', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}', headers: { 'Access-Control-Allow-Origin': '*' } }));
+
+        // The client's region list, then this month's orders.
+        const regions = await upload(page, 'acme_regions.csv', Buffer.from('Region,Manager\nNorth,Asha\nSouth,Ben\nEast,Cara\nNorthwest,Dev\n'));
+        await regions.getByRole('button', { name: 'Close' }).click();
+        const ready = await upload(page, 'acme_orders_mar.csv', ordersCsv(3));
+        await ready.getByRole('button', { name: 'Close' }).click();
+        await openSteps(page);
+
+        // 1. Bring each region's manager across.
+        await addStep(page, 'Combine with another file');
+        const form = page.locator('.qi-steps-form');
+        await form.getByLabel('How to combine').selectOption('match');
+        await form.getByLabel('Other file').selectOption('acme_regions.csv');
+        await form.getByLabel('Matching column in this file').selectOption('region');
+        await form.getByLabel('Matching column in the other file').selectOption('region');
+        await expect(form.locator('.qi-steps-effect')).toContainText(/brought from 'acme_regions'; \d+ of 50 rows found a match/);
+        await form.getByLabel('Why is this step needed?').fill('Managers sign off their own region');
+        await shoot(page, `97-steps-combine-${theme}`);
+        await form.getByRole('button', { name: 'Add step' }).click();
+
+        // 2. One column per manager, with their revenue.
+        await addStep(page, 'Turn rows into columns');
+        await form.getByLabel('New columns from').selectOption('manager');
+        await form.getByLabel('Fill them with').selectOption('sum');
+        await form.getByLabel('Values from').selectOption('revenue');
+        await expect(form.locator('.qi-steps-effect')).toContainText(/\d+ new columns/);
+        await form.getByRole('button', { name: 'Add step' }).click();
+        await expect(page.locator('.qi-steps-grid th').filter({ hasText: 'asha' })).toHaveCount(1);
+
+        // The whole file is cleaned with the other file too.
+        await page.getByRole('button', { name: 'Apply to the whole file' }).click();
+        await expect(page.getByText('Not applied yet')).toHaveCount(0, { timeout: 30000 });
+        const list = page.locator('.qi-steps-list');
+        await expect(list).toContainText("Bring columns from 'acme_regions', matching 'region' to 'region'");
+        await expect(list.locator('.qi-steps-result').first()).toContainText(/\d+ of 50 rows found a match/);
+        await expect(list).toContainText("Turn the values of 'manager' into columns, filled with the total of 'revenue'");
+        await shoot(page, `98-steps-combine-pivot-${theme}`);
+        // The cleaning itself (not just the preview) found the other file.
+        await page.getByRole('button', { name: 'Checklist', exact: true }).click();
+        const checklist = page.locator('.qi-chk').first();
+        await expect(checklist).toContainText("Bring columns from 'acme_regions'");
+        await expect(checklist).not.toContainText('is not loaded');
+    });
 }
