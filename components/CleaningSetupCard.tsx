@@ -1,8 +1,9 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, ChevronDown, Download, Loader2, Pencil, Puzzle, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, Download, FileText, Loader2, Pencil, Puzzle, RefreshCw, Trash2, Upload } from 'lucide-react';
 import type { AppliedSetup, CleaningSetup, Dataset } from '../types';
 import { useSetupStore } from '../store/useSetupStore';
 import { buildSetup, choicesDiffer, describeSetup, headersOf, pickSetup, readSetupFile, setupFile } from '../utils/cleaningSetups';
+import { SetupHandover } from './SetupHandover';
 
 /**
  * Saved cleaning setups, on the Cleaning tab.
@@ -45,6 +46,7 @@ function SetupList({ setups, current }: { setups: CleaningSetup[]; current?: str
     const [draft, setDraft] = useState('');
     const [confirm, setConfirm] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+    const [handover, setHandover] = useState<CleaningSetup | null>(null);
     const fileInput = useRef<HTMLInputElement>(null);
 
     const download = () => {
@@ -85,6 +87,7 @@ function SetupList({ setups, current }: { setups: CleaningSetup[]; current?: str
                             </div>
                             {editing !== setup.id && (
                                 <div className="qi-setup-actions">
+                                    <button type="button" className="qi-chk-undo" onClick={() => setHandover(setup)} aria-label={`Handover page for ${setup.name}`}><FileText className="h-3 w-3" aria-hidden /> Handover page</button>
                                     <button type="button" className="qi-chk-undo" onClick={() => { setEditing(setup.id); setDraft(setup.name); }} aria-label={`Rename ${setup.name}`}><Pencil className="h-3 w-3" aria-hidden /> Rename</button>
                                     {confirm === setup.id ? (
                                         <button type="button" className="qi-chk-undo is-danger" onClick={() => { deleteSetup(setup.id); setConfirm(null); }}><Trash2 className="h-3 w-3" aria-hidden /> Delete for good</button>
@@ -105,6 +108,7 @@ function SetupList({ setups, current }: { setups: CleaningSetup[]; current?: str
                 <SyncLine />
             </div>
             {message && <p className="qi-setup-meta" role="status">{message}</p>}
+            {handover && <SetupHandover setup={setups.find(s => s.id === handover.id) || handover} onClose={() => setHandover(null)} />}
         </div>
     );
 }
@@ -114,6 +118,7 @@ export const CleaningSetupCard: React.FC<Props> = ({ dataset, onApplySetup, onCl
     const saveSetup = useSetupStore(state => state.saveSetup);
     const [name, setName] = useState(() => fileStem(dataset.name));
     const [manage, setManage] = useState(false);
+    const [showHandover, setShowHandover] = useState(false);
     const busy = Boolean(pending);
     const applied = dataset.cleaningSetup;
     const setup = applied ? setups.find(s => s.id === applied.id) : undefined;
@@ -148,6 +153,11 @@ export const CleaningSetupCard: React.FC<Props> = ({ dataset, onApplySetup, onCl
                             </div>
                         )}
                         <div className="qi-setup-buttons">
+                            {setup && (
+                                <button type="button" className="qi-chk-undo" onClick={() => setShowHandover(true)}>
+                                    <FileText className="h-3 w-3" aria-hidden /> Handover page
+                                </button>
+                            )}
                             {setup && changed && (
                                 <button type="button" className="qi-chk-undo" onClick={() => save(setup)} disabled={busy}>
                                     <RefreshCw className="h-3 w-3" aria-hidden /> Update the setup with your latest choices
@@ -195,6 +205,7 @@ export const CleaningSetupCard: React.FC<Props> = ({ dataset, onApplySetup, onCl
                 <ChevronDown className={`h-3.5 w-3.5 ${manage ? 'rotate-180' : ''}`} aria-hidden /> {manage ? 'Hide saved setups' : `Saved setups (${setups.length})`}
             </button>
             {manage && <SetupList setups={setups} current={applied?.id} />}
+            {showHandover && setup && <SetupHandover setup={setup} onClose={() => setShowHandover(false)} />}
         </section>
     );
 };

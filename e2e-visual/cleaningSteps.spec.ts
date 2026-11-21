@@ -120,6 +120,17 @@ for (const theme of ['light', 'dark'] as const) {
         await page.getByLabel('Name it for the client and the file').fill('Acme · monthly orders');
         await page.getByRole('button', { name: 'Save as a setup' }).click();
         await expect(page.locator('.qi-setup').first()).toContainText('3 steps');
+        // The handover page the client keeps.
+        await page.locator('.qi-setup').first().getByRole('button', { name: 'Handover page' }).click();
+        const handover = page.getByRole('dialog', { name: 'Acme · monthly orders' });
+        await expect(handover).toContainText("Why: The client's QA team places test orders");
+        await expect(handover).toContainText('When QuickInsight will warn you');
+        await handover.getByLabel('Notes from your data team').fill('Export the Orders report on the first working day of each month and upload it here.');
+        await handover.getByRole('button', { name: 'Save notes' }).click();
+        await expect(handover).toContainText('Saved with the setup');
+        await shoot(page, `96-handover-${theme}`);
+        await handover.getByRole('button', { name: 'Close' }).click();
+        await expect(handover).toHaveCount(0);
         const feb = await upload(page, 'acme_orders_feb.csv', ordersCsv(2));
         await expect(feb).toContainText('Cleaned with your saved setup');
         await feb.getByRole('button', { name: 'Close' }).click();

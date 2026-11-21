@@ -5959,3 +5959,41 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-setup-sync.is-offline { color: #b45309; }
 .qi-setup-sync.is-offline .qi-setup-dot { background: #d97706; }
 :root.dark .qi-setup-sync.is-offline { color: #fbc66b; }
+
+/* Handover page for a saved cleaning setup */
+.qi-handover-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: start center; overflow-y: auto; padding: 32px 16px; background: rgb(15 23 42 / .45); }
+.qi-handover { width: min(820px, 100%); display: grid; gap: 22px; padding: 0 32px 28px; border-radius: 16px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 24px 60px rgb(0 0 0 / .25); border: 1px solid var(--border-default); }
+.qi-handover-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -32px; padding: 12px 20px; background: var(--bg-surface); border-bottom: 1px solid var(--border-default); border-radius: 16px 16px 0 0; font-size: 12.5px; font-weight: 600; color: var(--text-tertiary); }
+.qi-handover-kicker { margin: 0; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-foreground); }
+.qi-handover-head h2 { margin: 4px 0 8px; font-size: 26px; font-weight: 700; line-height: 1.2; }
+.qi-handover-head > p { margin: 0; max-width: 68ch; font-size: 14px; line-height: 1.6; color: var(--text-secondary); }
+.qi-handover-facts { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 16px 0 0; }
+.qi-handover-facts dt { font-size: 11.5px; color: var(--text-tertiary); }
+.qi-handover-facts dd { margin: 0; font-size: 13.5px; font-weight: 600; }
+.qi-handover-section { display: grid; gap: 8px; padding-top: 18px; border-top: 1px solid var(--border-default); }
+.qi-handover-section h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.qi-handover-intro { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+.qi-handover-section ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 8px; }
+.qi-handover-section ol.is-numbered { padding-left: 22px; list-style: decimal; }
+.qi-handover-section ol:not(.is-numbered) li { position: relative; padding-left: 16px; }
+.qi-handover-section ol:not(.is-numbered) li::before { content: ''; position: absolute; left: 2px; top: .6em; width: 5px; height: 5px; border-radius: 999px; background: var(--text-tertiary); }
+.qi-handover-section li { font-size: 13.5px; line-height: 1.5; }
+.qi-handover-section li span { display: block; }
+.qi-handover-section li em { display: block; font-size: 12.5px; color: var(--text-secondary); }
+.qi-handover-section li.is-off span { text-decoration: line-through; color: var(--text-tertiary); }
+.qi-handover-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.qi-handover-table th { text-align: left; padding: 6px 10px; font-size: 11.5px; font-weight: 600; color: var(--text-tertiary); border-bottom: 1px solid var(--border-default); }
+.qi-handover-table td { padding: 6px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border-default) 60%, transparent); }
+.qi-handover-table td:first-child { font-weight: 600; }
+.qi-handover-printnotes { display: none; margin: 0; white-space: pre-wrap; font-size: 13.5px; line-height: 1.5; }
+.qi-handover-foot { padding-top: 14px; border-top: 1px solid var(--border-default); font-size: 11.5px; color: var(--text-tertiary); }
+@media (max-width: 600px) { .qi-handover { padding: 0 18px 22px; } .qi-handover-bar { margin: 0 -18px; } }
+@media print {
+  body.qi-printing-handover * { visibility: hidden !important; }
+  body.qi-printing-handover .qi-handover, body.qi-printing-handover .qi-handover * { visibility: visible !important; }
+  body.qi-printing-handover .qi-handover-backdrop { position: absolute; inset: 0; padding: 0; background: none; overflow: visible; display: block; }
+  body.qi-printing-handover .qi-handover { width: 100%; box-shadow: none; border: 0; border-radius: 0; padding: 0; color: #000; background: #fff; }
+  body.qi-printing-handover .qi-no-print { display: none !important; }
+  body.qi-printing-handover .qi-handover-printnotes { display: block; }
+  body.qi-printing-handover .qi-handover-section { break-inside: avoid; }
+}
