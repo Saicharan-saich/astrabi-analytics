@@ -157,7 +157,7 @@ for (const theme of ['light', 'dark'] as const) {
         await addStep(page, 'Combine with another file');
         const form = page.locator('.qi-steps-form');
         await form.getByLabel('How to combine').selectOption('match');
-        await form.getByLabel('Other file').selectOption('acme_regions.csv');
+        await form.getByLabel('Other file', { exact: true }).selectOption('acme_regions.csv');
         await form.getByLabel('Matching column in this file').selectOption('region');
         await form.getByLabel('Matching column in the other file').selectOption('region');
         await expect(form.locator('.qi-steps-effect')).toContainText(/brought from 'acme_regions'; \d+ of 50 rows found a match/);
