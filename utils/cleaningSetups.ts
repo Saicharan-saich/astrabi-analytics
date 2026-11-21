@@ -221,3 +221,40 @@ export function mergeSetups(current: CleaningSetup[], incoming: CleaningSetup[])
     }
     return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
 }
+
+/* ── keeping setups with the account ── */
+
+export interface AccountSetups { setups: CleaningSetup[]; deleted: { id: string; at: number }[] }
+
+export interface SyncPlan {
+    /** What this browser should hold afterwards. */
+    keep: CleaningSetup[];
+    /** Setups the account lacks or holds an older version of. */
+    push: CleaningSetup[];
+    /** Deletions made here that the account should make too. */
+    remove: { id: string; at: number }[];
+}
+
+/** Pure: how to bring this browser and the account into line. */
+export function planSync(local: CleaningSetup[], localDeleted: Record<string, number>, account: AccountSetups): SyncPlan {
+    const accountDeleted = new Map(account.deleted.map(d => [d.id, d.at] as const));
+    const accountById = new Map(account.setups.map(s => [s.id, s] as const));
+    // A deletion wins over any version it is newer than, wherever it was made.
+    const liveHere = local.filter(s => !((accountDeleted.get(s.id) ?? -1) >= s.updatedAt));
+    const liveThere = account.setups.filter(s => !((localDeleted[s.id] ?? -1) >= s.updatedAt));
+    // Newest version wins; on the same version, the one used more often (usage counts travel too).
+    const byId = new Map<string, CleaningSetup>();
+    for (const s of [...liveThere, ...liveHere]) {
+        const have = byId.get(s.id);
+        if (!have || s.updatedAt > have.updatedAt || (s.updatedAt === have.updatedAt && (s.timesUsed || 0) > (have.timesUsed || 0))) byId.set(s.id, s);
+    }
+    const keep = [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    const push = keep.filter(s => {
+        const there = accountById.get(s.id);
+        return !there || s.updatedAt > there.updatedAt || (s.updatedAt === there.updatedAt && (s.timesUsed || 0) > (there.timesUsed || 0));
+    });
+    const remove = Object.entries(localDeleted)
+        .filter(([id, at]) => !((accountDeleted.get(id) ?? -1) >= at))
+        .map(([id, at]) => ({ id, at }));
+    return { keep, push, remove };
+}

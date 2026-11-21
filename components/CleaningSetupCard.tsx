@@ -24,6 +24,21 @@ interface Props {
 const fileStem = (name: string) => name.replace(/\.(csv|xlsx?|json|parquet)$/i, '').replace(/[_-]+/g, ' ').trim();
 const day = (ms?: number) => (ms ? new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 
+/** Where the setups are kept, and whether the account is up to date. */
+function SyncLine() {
+    const sync = useSetupStore(state => state.sync);
+    const ago = (ms?: number) => {
+        if (!ms) return '';
+        const min = Math.round((Date.now() - ms) / 60000);
+        return min < 1 ? 'just now' : min < 60 ? `${min} min ago` : day(ms);
+    };
+    const words = sync.status === 'synced' ? `Kept with your account, so they are there on any computer you sign in on · up to date ${ago(sync.at)}`
+        : sync.status === 'syncing' ? 'Saving to your account…'
+            : sync.status === 'offline' ? (sync.message || 'Could not reach your account; your setups are safe in this browser and will sync later.')
+                : 'Kept in this browser only. Sign in to keep them with your account.';
+    return <span className={`qi-setup-sync is-${sync.status}`} role="status">{sync.status === 'syncing' ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <span className="qi-setup-dot" aria-hidden />}{words}</span>;
+}
+
 function SetupList({ setups, current }: { setups: CleaningSetup[]; current?: string }) {
     const { renameSetup, deleteSetup, addSetups } = useSetupStore();
     const [editing, setEditing] = useState<string | null>(null);
@@ -86,7 +101,8 @@ function SetupList({ setups, current }: { setups: CleaningSetup[]; current?: str
                 {setups.length > 0 && <button type="button" className="qi-chk-undo" onClick={download}><Download className="h-3 w-3" aria-hidden /> Download setup file</button>}
                 <button type="button" className="qi-chk-undo" onClick={() => fileInput.current?.click()}><Upload className="h-3 w-3" aria-hidden /> Load a setup file</button>
                 <input ref={fileInput} type="file" accept=".json,application/json" className="hidden" aria-label="Setup file" onChange={event => { load(event.target.files?.[0]); event.target.value = ''; }} />
-                <span className="qi-setup-meta">Setups hold cleaning choices and column names, never your rows. They are kept in this browser; a setup file moves them to another computer.</span>
+                <span className="qi-setup-meta">Setups hold cleaning choices and column names, never your rows.</span>
+                <SyncLine />
             </div>
             {message && <p className="qi-setup-meta" role="status">{message}</p>}
         </div>

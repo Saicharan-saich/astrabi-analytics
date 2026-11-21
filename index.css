@@ -5953,3 +5953,9 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-steps-grid td.is-blank { color: var(--text-tertiary); font-style: italic; opacity: .7; }
 .qi-steps-grid .is-hit { background: color-mix(in srgb, var(--color-primary) 9%, transparent); }
 .qi-steps-grid th.is-hit span { color: var(--accent-foreground); }
+.qi-setup-sync { flex-basis: 100%; display: inline-flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--text-tertiary); }
+.qi-setup-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--text-tertiary); flex: none; }
+.qi-setup-sync.is-synced .qi-setup-dot { background: var(--color-success, #16a34a); }
+.qi-setup-sync.is-offline { color: #b45309; }
+.qi-setup-sync.is-offline .qi-setup-dot { background: #d97706; }
+:root.dark .qi-setup-sync.is-offline { color: #fbc66b; }

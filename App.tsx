@@ -22,6 +22,7 @@ import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
 import { fetchAISQLEngineConfig } from './services/ai-sql/engineConfig';
 import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor, datasetSignature } from './services/columnCorrectionsService';
 import { useSetupStore } from './store/useSetupStore';
+import { startSetupSync, stopSetupSync } from './services/setupSync';
 import { appliedSetup as setupRecord, handSetKinds } from './utils/cleaningSetups';
 import type { AppliedSetup, CleaningSetup } from './types';
 import { buildAutoDashboard } from './services/autoDashboardBuilder';
@@ -303,10 +304,13 @@ function App() {
       // Prime the remembered column-classification cache so future uploads can
       // auto-apply corrections. Metadata only (columnName → role) — never data.
       fetchColumnCorrections().catch(() => { /* fail-open */ });
+      // Saved cleaning setups follow the account (choices and column names, never rows).
+      startSetupSync(currentUser.id);
       // Restore user dashboards normally, or perform the one-time legacy
       // dashboard cleanup before anything can be shown after a refresh.
       syncDashboardsFromCloud().catch(() => { /* fail-open: local dashboard state remains usable */ });
     }
+    if (!isAuthenticated && prevAuthRef.current) stopSetupSync();
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated, currentUser]);
 
