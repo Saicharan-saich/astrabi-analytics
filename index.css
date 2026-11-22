@@ -6030,3 +6030,4 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-share-list label > span:first-of-type { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qi-share-list em { font-style: normal; color: var(--text-tertiary); margin-left: 6px; }
 .qi-share-role { font-size: 11px; font-weight: 600; text-transform: capitalize; color: var(--text-tertiary); }
+.qi-setup-list .qi-share-list li { display: block; padding: 0; border: 0; background: none; }
