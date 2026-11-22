@@ -61,6 +61,8 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `09-overview-deeper-${theme}`);
         await ask('What else?');
         await expect(page.locator('.qi-chat-row').last()).toContainText(/Digging further into|That is everything that stands out/);
+    });
+
     test(`cleaning is for admins only ${theme}`, async ({ page }) => {
         test.setTimeout(120_000);
         await page.setViewportSize({ width: 1440, height: 900 });
