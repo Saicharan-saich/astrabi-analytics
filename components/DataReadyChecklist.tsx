@@ -5,6 +5,8 @@ import { buildReadiness, type ReadyItem } from '../utils/dataReadiness';
 import { buildReviewOptions, type StepDecision } from '../utils/cleaningReview';
 import { cleanedByOlderVersion } from '../utils/etlChangeSummary';
 import type { BlankCard } from '../utils/blankChoices';
+import { blankRows, rowsForLog, type ItemChanges, type ItemRows } from '../utils/itemRows';
+import { ViewRowsButton } from './ItemRowsView';
 
 /**
  * "Is your data ready?" — the cleaning as one plain checklist for people who
@@ -25,34 +27,6 @@ interface Props {
     pending?: string | null;
     /** Opens the full step-by-step list. */
     onShowEveryCheck?: () => void;
-}
-
-const SAMPLE_COLUMNS = 6;
-const LONG_DATE = /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
-function cellText(value: unknown): string {
-    if (value === null || value === undefined || value === '') return '(blank)';
-    if (typeof value === 'string' && LONG_DATE.test(value)) {
-        const date = new Date(value);
-        if (!Number.isNaN(date.getTime())) return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    }
-    return String(value);
-}
-
-function Samples({ rows, highlight }: { rows: Record<string, any>[]; highlight?: string[] }) {
-    const keys = Object.keys(rows[0] || {}).filter(k => !k.startsWith('__')).slice(0, SAMPLE_COLUMNS);
-    if (!keys.length) return null;
-    return (
-        <div className="qi-chk-samples">
-            <table>
-                <thead><tr>{keys.map(k => <th key={k} className={highlight?.includes(k) ? 'is-hit' : ''}>{k.replace(/_/g, ' ')}</th>)}</tr></thead>
-                <tbody>
-                    {rows.slice(0, 3).map((row, i) => (
-                        <tr key={i}>{keys.map(k => <td key={k} className={highlight?.includes(k) ? 'is-hit' : ''}>{cellText(row[k])}</td>)}</tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
 }
 
 /** Why / without / measured impact, the same three lines everywhere. */
@@ -78,8 +52,9 @@ function decisionFor(item: ReadyItem, choiceId: string): StepDecision | null {
     return null;
 }
 
-function DecisionItem({ item, picked, onPick }: { item: ReadyItem; picked?: string; onPick: (choice: string) => void }) {
-    const [open, setOpen] = useState(false);
+type RowsView = ItemRows | ItemChanges | null;
+
+function DecisionItem({ item, picked, onPick, view }: { item: ReadyItem; picked?: string; onPick: (choice: string) => void; view: RowsView }) {
     return (
         <li className="qi-chk-item is-decide">
             <div className="qi-chk-item-head">
@@ -99,19 +74,12 @@ function DecisionItem({ item, picked, onPick }: { item: ReadyItem; picked?: stri
                     </label>
                 ))}
             </fieldset>
-            {item.samples && item.samples.length > 0 && (
-                <>
-                    <button type="button" className="qi-chk-more" aria-expanded={open} onClick={() => setOpen(v => !v)}>
-                        <ChevronDown className={`h-3.5 w-3.5 ${open ? 'rotate-180' : ''}`} aria-hidden /> {open ? 'Hide examples' : 'Show examples'}
-                    </button>
-                    {open && <Samples rows={item.samples} highlight={item.decision ? [item.decision.column] : undefined} />}
-                </>
-            )}
+            <ViewRowsButton title={item.title} view={view} />
         </li>
     );
 }
 
-function BlankItem({ card, picked, onPick }: { card: BlankCard; picked: BlankChoice; onPick: (choice: BlankChoice) => void }) {
+function BlankItem({ card, picked, onPick, view }: { card: BlankCard; picked: BlankChoice; onPick: (choice: BlankChoice) => void; view: RowsView }) {
     const recommended = card.options.find(o => o.recommended);
     return (
         <li className="qi-chk-item is-blank">
@@ -136,11 +104,12 @@ function BlankItem({ card, picked, onPick }: { card: BlankCard; picked: BlankCho
                 ))}
             </fieldset>
             {recommended && <p className="qi-chk-because"><Info className="h-3.5 w-3.5" aria-hidden /> {card.because}</p>}
+            <ViewRowsButton title={card.headline} view={view} />
         </li>
     );
 }
 
-function DoneItem({ item, onRevert, busy, pending }: { item: ReadyItem; onRevert?: Props['onRevert']; busy: boolean; pending: boolean }) {
+function DoneItem({ item, onRevert, busy, pending, view }: { item: ReadyItem; onRevert?: Props['onRevert']; busy: boolean; pending: boolean; view: RowsView }) {
     const [open, setOpen] = useState(false);
     return (
         <li className="qi-chk-row">
@@ -151,6 +120,7 @@ function DoneItem({ item, onRevert, busy, pending }: { item: ReadyItem; onRevert
                     {!open && <span className="qi-chk-why-line">{item.why}</span>}
                 </span>
             </button>
+            <ViewRowsButton title={item.title} view={view} />
             {item.revert && onRevert && (
                 <button type="button" className="qi-chk-undo" disabled={busy} onClick={() => onRevert(item.revert!)}>
                     {pending ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Undo2 className="h-3 w-3" aria-hidden />} {item.revert.label}
@@ -160,7 +130,6 @@ function DoneItem({ item, onRevert, busy, pending }: { item: ReadyItem; onRevert
                 <div className="qi-chk-row-body">
                     <p className="qi-chk-what">{item.what}</p>
                     <Reasons item={item} />
-                    {item.samples && item.samples.length > 0 && <Samples rows={item.samples} />}
                     <p className="qi-chk-tech">{item.technical}</p>
                 </div>
             )}
@@ -172,6 +141,14 @@ const BLANKS_SHOWN = 4;
 
 export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert, onReclean, pending = null, onShowEveryCheck }) => {
     const ready = useMemo(() => buildReadiness(dataset), [dataset]);
+    // The rows each item is about, for "View rows" (worked out here, from this data).
+    const viewOf = useMemo(() => {
+        const cache = new Map<number, RowsView>();
+        return (item: ReadyItem) => {
+            if (!cache.has(item.logIndex)) cache.set(item.logIndex, rowsForLog(dataset.etlLogs?.[item.logIndex], dataset.rows));
+            return cache.get(item.logIndex)!;
+        };
+    }, [dataset.etlLogs, dataset.rows]);
     const older = useMemo(() => cleanedByOlderVersion(dataset.etlLogs), [dataset.etlLogs]);
     const [decisions, setDecisions] = useState<Record<string, { decision: StepDecision; label: string }>>({});
     const [blankPicks, setBlankPicks] = useState<Record<string, BlankChoice>>({});
@@ -264,6 +241,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
                             <DecisionItem
                                 key={item.id}
                                 item={item}
+                                view={viewOf(item)}
                                 picked={decisions[item.id]?.decision ? (decisions[item.id].decision as any).choice : undefined}
                                 onPick={choice => {
                                     const decision = decisionFor(item, choice);
@@ -282,7 +260,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
                     <p className="qi-chk-group-sub">A blank can mean "none", "not recorded" or "does not apply". Each choice shows the numbers you would get.</p>
                     <ul className="qi-chk-list">
                         {shownBlanks.map(card => (
-                            <BlankItem key={card.column} card={card} picked={blankPicks[card.column] || card.current} onPick={choice => setBlankPicks(prev => ({ ...prev, [card.column]: choice }))} />
+                            <BlankItem key={card.column} card={card} view={blankRows(card.column, dataset.rows)} picked={blankPicks[card.column] || card.current} onPick={choice => setBlankPicks(prev => ({ ...prev, [card.column]: choice }))} />
                         ))}
                     </ul>
                     {ready.blanks.length > BLANKS_SHOWN && (
@@ -299,7 +277,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
                     <h3 className="qi-chk-group-title">Fixed for you</h3>
                     <p className="qi-chk-group-sub">Open any item to see why it was done and what would go wrong without it.</p>
                     <ul className="qi-chk-rows">
-                        {ready.fixed.map(item => <DoneItem key={item.id} item={item} onRevert={onRevert} busy={busy} pending={pending === item.revert?.option} />)}
+                        {ready.fixed.map(item => <DoneItem key={item.id} item={item} view={viewOf(item)} onRevert={onRevert} busy={busy} pending={pending === item.revert?.option} />)}
                     </ul>
                 </div>
             )}
@@ -309,7 +287,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
                     <h3 className="qi-chk-group-title">Good to know</h3>
                     <p className="qi-chk-group-sub">Noticed and left as they are.</p>
                     <ul className="qi-chk-rows">
-                        {ready.goodToKnow.map(item => <DoneItem key={item.id} item={item} onRevert={onRevert} busy={busy} pending={pending === item.revert?.option} />)}
+                        {ready.goodToKnow.map(item => <DoneItem key={item.id} item={item} view={viewOf(item)} onRevert={onRevert} busy={busy} pending={pending === item.revert?.option} />)}
                     </ul>
                 </div>
             )}

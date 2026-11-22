@@ -57,7 +57,7 @@ function applyFlag(rows: Row[], spec: FlagSpec, decisions: Record<string, FlagCh
     if (spec.hits.size === 0) return rows;
     const choice = decisions[spec.key];
     const affectedColumns = spec.columns || [spec.column];
-    const samples = [...spec.hits].slice(0, 5);
+    const samples = [...spec.hits].slice(0, 200); // kept for "View rows" (stays on this computer)
     const undo = { option: 'flagDecisions' as const, value: undoValue(decisions, spec.key) as any, label: 'Review again' };
     if (choice === 'remove') {
         const before = rows.length;
@@ -505,7 +505,7 @@ function customRules(rows: Row[], opts: EtlOptions, decisions: Record<string, Fl
             const before = out.length;
             out = out.filter(row => !hits.has(row));
             logs.push(entry('Rule Applied', 'applied', `Your rule "${words}": removed ${plural(before - out.length, 'row')} that broke it.`,
-                { affectedColumns: [rule.column], rowsBefore: before, rowsAfter: out.length, removedRowSamples: [...hits].slice(0, 5), revert: removeRule }));
+                { affectedColumns: [rule.column], rowsBefore: before, rowsAfter: out.length, removedRowSamples: [...hits].slice(0, 200), revert: removeRule }));
             continue;
         }
         out = applyFlag(out, {

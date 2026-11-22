@@ -133,7 +133,7 @@ export function applyBlankDecisions(rows: Row[], profiles: BlankProfile[], decis
                 ...base, step: 'Blanks Decision', status: 'applied',
                 details: `Your choice: ${removed.length} row(s) with no '${words(profile.column)}' are left out of every answer.`,
                 rowsBefore: before, rowsAfter: out.length, affectedRows: removed.length,
-                removedRowSamples: removed.slice(0, 10), removedAmounts: amountsIn(removed),
+                removedRowSamples: removed.slice(0, 200), removedAmounts: amountsIn(removed),
             });
             continue;
         }

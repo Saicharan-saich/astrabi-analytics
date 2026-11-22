@@ -195,4 +195,40 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(checklist).toContainText("Bring columns from 'acme_regions'");
         await expect(checklist).not.toContainText('is not loaded');
     });
+    test(`checklist: view the rows an item is about (${theme})`, async ({ page }) => {
+        test.setTimeout(180_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'DASHBOARD');
+        await page.route('**/api/llm/chat', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}', headers: { 'Access-Control-Allow-Origin': '*' } }));
+        // 60 orders with two food costs far out of line, and two exact copies.
+        const lines = ['Order ID,Order Date,Location,Food Cost,Net Sales'];
+        for (let i = 0; i < 60; i++) lines.push(`R${1000 + i},2026-0${1 + (i % 9)}-1${i % 9},${['Leeds', 'York', 'Hull'][i % 3]},${(8 + (i % 7) * 0.5).toFixed(2)},${20 + (i % 11)}`);
+        lines[12] = 'R1011,2026-03-12,York,950.00,25';
+        lines[41] = 'R1040,2026-05-14,Leeds,1200.00,28';
+        lines.push(lines[5], lines[6]);
+        const ready = await upload(page, 'kitchen_costs.csv', Buffer.from(lines.join('\n') + '\n'));
+        await ready.getByRole('button', { name: 'Close' }).click();
+        await openSteps(page);
+        await page.getByRole('button', { name: 'Checklist', exact: true }).click();
+
+        const unusual = page.locator('.qi-chk-item').filter({ hasText: /unusual values? in 'food_cost'/ }).first();
+        await unusual.getByRole('button', { name: 'View the 2 rows' }).click();
+        const table = page.getByRole('dialog', { name: /unusual values? in 'food_cost'/ });
+        await expect(table).toContainText('All 2 rows, straight from your cleaned data');
+        await expect(table.locator('tbody tr')).toHaveCount(2);
+        await expect(table.locator('thead th').nth(1)).toHaveText('food cost');
+        await expect(table.locator('tbody')).toContainText('1,200');
+        await expect(table.locator('tbody')).toContainText('950');
+        await expect(table.getByRole('button', { name: 'Download these rows' })).toBeVisible();
+        await shoot(page, `99-view-rows-${theme}`);
+        await page.keyboard.press('Escape');
+        await expect(table).toHaveCount(0);
+
+        // A fixed item: the copies that were taken out.
+        await page.getByRole('button', { name: 'View the 2 removed rows' }).first().click();
+        const removed = page.getByRole('dialog', { name: /duplicate/i });
+        await expect(removed).toContainText('taken out of the analysis');
+        await expect(removed.locator('tbody tr')).toHaveCount(2);
+        await removed.getByRole('button', { name: 'Close' }).click();
+    });
 }

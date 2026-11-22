@@ -38,6 +38,15 @@ export interface ColumnDefinition {
   currency?: string;
 }
 
+export interface RowMatch {
+  column: string;
+  outside?: [number, number];
+  exempt?: number[];
+  values?: string[];
+  negative?: boolean;
+  blank?: boolean;
+}
+
 export interface ETLLog {
   step: string;
   stepNumber?: number;
@@ -52,6 +61,12 @@ export interface ETLLog {
   removedRowSamples?: Record<string, any>[];
   /** Before/after value samples for column transforms */
   transformSamples?: { column: string; before: any; after: any }[];
+  /**
+   * Which rows of the cleaned data this entry is about, so "View rows" can
+   * list every one of them (not just examples): values outside a range,
+   * particular values, negatives, or blanks in one column.
+   */
+  rowMatch?: RowMatch;
   /** Totals check: each measure's total in the file vs after cleaning. */
   totalsCheck?: { column: string; uploaded: number | null; cleaned: number; blanked: number; changed: number }[];
   /** Re-run the cleaning with this option to reverse (or restore) the step. */

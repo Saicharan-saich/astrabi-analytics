@@ -833,7 +833,7 @@ function layer1_structuralNormalization(
                 + (r.renamedTo ? `, the unnamed first column became '${r.renamedTo}'` : '')
                 + (calc.length ? `, and ${calc.length} calculated line(s) (${calc.slice(0, 3).join(', ')}) were removed — they are worked out from the lines above, so adding them in would count money twice` : '')
                 + `. ${before} rows → ${rows.length}.`,
-                { rowsBefore: before, rowsAfter: rows.length, affectedColumns: ['section', r.labelColumn], removedRowSamples: r.calculated.slice(0, 10), revert: { option: 'keepTotalRows', value: true, label: 'Keep the report as uploaded' } }));
+                { rowsBefore: before, rowsAfter: rows.length, affectedColumns: ['section', r.labelColumn], removedRowSamples: r.calculated.slice(0, ROWS_KEPT_FOR_VIEW), revert: { option: 'keepTotalRows', value: true, label: 'Keep the report as uploaded' } }));
         }
     }
 
@@ -842,17 +842,17 @@ function layer1_structuralNormalization(
         const t = removeTotalRows(rows);
         if (t.removed.length > 0 && opts.keepTotalRows) {
             logs.push(keptLog('keepTotalRows', `${t.removed.length} total/subtotal row(s) were kept. Sums that include them count those figures twice.`,
-                { removedRowSamples: t.removed.slice(0, 10), affectedRows: t.removed.length }));
+                { removedRowSamples: t.removed.slice(0, ROWS_KEPT_FOR_VIEW), affectedRows: t.removed.length }));
         } else if (t.removed.length > 0) {
             rows = t.rows;
             logs.push(log('Total Row Removal', 1, 'applied',
                 `Removed ${t.removed.length} total/subtotal row(s) — their figures equal the rows they total, so keeping them would double-count.`,
-                { rowsBefore: rows.length + t.removed.length, rowsAfter: rows.length, removedRowSamples: t.removed.slice(0, 10), removedAmounts: amountsIn(t.removed), revert: { option: 'keepTotalRows', value: true, label: 'Keep these rows' } }));
+                { rowsBefore: rows.length + t.removed.length, rowsAfter: rows.length, removedRowSamples: t.removed.slice(0, ROWS_KEPT_FOR_VIEW), removedAmounts: amountsIn(t.removed), revert: { option: 'keepTotalRows', value: true, label: 'Keep these rows' } }));
         }
         if (t.suspicious.length > 0) {
             logs.push(log('Total Row Flag', 6, 'info',
                 `${t.suspicious.length} row(s) are labelled like totals but their numbers don't match the rows above, so they were kept. Check whether they should be counted.`,
-                { removedRowSamples: t.suspicious.slice(0, 10), affectedRows: t.suspicious.length }));
+                { removedRowSamples: t.suspicious.slice(0, ROWS_KEPT_FOR_VIEW), affectedRows: t.suspicious.length }));
         }
     }
 
@@ -905,7 +905,7 @@ function layer1_structuralNormalization(
         } else if (opts.keepDuplicateRows) {
             const d = dedupeRows(rows, ID_PATTERNS);
             if (d.removed.length > 0) logs.push(keptLog('keepDuplicateRows', `${d.removed.length} exact duplicate row(s) were kept, so they are counted more than once.`,
-                { removedRowSamples: d.removed.slice(0, 10), affectedRows: d.removed.length }));
+                { removedRowSamples: d.removed.slice(0, ROWS_KEPT_FOR_VIEW), affectedRows: d.removed.length }));
         } else {
         const before = rows.length;
         const d = dedupeRows(rows, ID_PATTERNS);
@@ -914,7 +914,7 @@ function layer1_structuralNormalization(
         if (duplicatesRemoved > 0) {
             logs.push(log('Duplicate Row Removal', 1, 'applied',
                 `Removed ${duplicatesRemoved} exact duplicate row(s). '${d.keyColumn}' is unique once copies are removed, so the repeats were re-exported copies.`,
-                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: d.removed.slice(0, 10), removedAmounts: amountsIn(d.removed), affectedColumns: d.keyColumn ? [d.keyColumn] : [], revert: { option: 'keepDuplicateRows', value: true, label: 'Keep the copies' } }));
+                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: d.removed.slice(0, ROWS_KEPT_FOR_VIEW), removedAmounts: amountsIn(d.removed), affectedColumns: d.keyColumn ? [d.keyColumn] : [], revert: { option: 'keepDuplicateRows', value: true, label: 'Keep the copies' } }));
         } else {
             logs.push(log('Duplicate Row Removal', 1, 'skipped', d.keyColumn
                 ? `No duplicate rows ('${d.keyColumn}' is unique).`
@@ -1892,7 +1892,7 @@ function layer5b_hardening(
         const examples = [...new Set(found.map(f => f.value))].slice(0, 3).map(v => v.toLocaleString('en-GB'));
         logs.push(log('Impossible Values', 6, 'info',
             `Column '${c.name}': ${found.length} value(s) can't be right — ${examples.join(', ')} (${found[0].why}). Kept as they are, and every answer that uses them says so; correct or remove them in the file if you know the right value.`,
-            { affectedColumns: [c.name], affectedRows: found.length }));
+            { affectedColumns: [c.name], affectedRows: found.length, rowMatch: { column: c.name, values: [...new Set(found.map(f => String(f.value)))] } }));
     }
     // 2a. Numeric outliers per metric — flagged, or handled as the user decided.
     const outlierDecisions = opts.outlierDecisions || {};
@@ -1913,17 +1913,18 @@ function layer5b_hardening(
             return Number.isFinite(n) && (n < r.lowerBound || n > r.upperBound) && !exempt.has(n);
         };
         const undo = { option: 'outlierDecisions' as const, value: withoutDecision(outlierDecisions, c.name), label: `Review '${c.name}' again` };
+        const outsideMatch = { column: c.name, outside: [r.lowerBound, r.upperBound] as [number, number], ...(exempt.size ? { exempt: [...exempt] } : {}) };
         if (choice === 'keep') {
             logs.push(log('Outlier Confirmed', 6, 'applied',
                 `Column '${c.name}': ${r.count} value(s) outside the usual range ${range} (e.g. ${r.examples.join(', ')}) were checked and kept as correct.`,
-                { affectedColumns: [c.name], affectedRows: r.count, revert: undo }));
+                { affectedColumns: [c.name], affectedRows: r.count, revert: undo, rowMatch: outsideMatch }));
         } else if (choice === 'remove') {
             const before = rows.length;
             const removed = rows.filter(row => isOutlier(row[c.name]));
             rows = rows.filter(row => !isOutlier(row[c.name]));
             logs.push(log('Outlier Removal', 6, 'applied',
                 `Column '${c.name}': removed ${removed.length} row(s) with values outside the usual range ${range}, as you chose.`,
-                { affectedColumns: [c.name], rowsBefore: before, rowsAfter: rows.length, removedRowSamples: removed.slice(0, 10), removedAmounts: amountsIn(removed), revert: { ...undo, label: 'Put these rows back' } }));
+                { affectedColumns: [c.name], rowsBefore: before, rowsAfter: rows.length, removedRowSamples: removed.slice(0, ROWS_KEPT_FOR_VIEW), removedAmounts: amountsIn(removed), revert: { ...undo, label: 'Put these rows back' } }));
         } else if (choice === 'cap') {
             const samples: { column: string; before: unknown; after: unknown }[] = [];
             let changed = 0;
@@ -1941,7 +1942,7 @@ function layer5b_hardening(
         } else {
             logs.push(log('Outlier Flag', 6, 'info',
                 `Column '${c.name}': ${r.count} value(s) outside the expected range ${range} (e.g. ${r.examples.join(', ')}). Review before trusting sums/averages — not auto-removed.`,
-                { affectedColumns: [c.name], affectedRows: r.count, decision: { kind: 'outlier', column: c.name } }));
+                { affectedColumns: [c.name], affectedRows: r.count, decision: { kind: 'outlier', column: c.name }, rowMatch: outsideMatch }));
         }
     }
     // 2b. Likely typos among category values (edit distance 1).
@@ -1971,14 +1972,14 @@ function layer5b_hardening(
         if (groups.length > 0 && typoChoice === 'keep') {
             logs.push(log('Typo Review', 6, 'applied',
                 `Column '${c.name}': ${groups.length} similar value(s) were checked and kept as different values.`,
-                { affectedColumns: [c.name], revert: typoUndo }));
+                { affectedColumns: [c.name], revert: typoUndo, rowMatch: typoMatch(c.name, groups) }));
             continue;
         }
         if (groups.length > 0) {
             const ex = groups.slice(0, 2).map(g => `"${g.variants[0]}"≈"${g.canonical}"`).join(', ');
             logs.push(log('Possible Typo Flag', 6, 'info',
                 `Column '${c.name}': ${groups.length} near-duplicate value(s) that may be typos (${ex}). Not merged automatically — confirm to combine.`,
-                { affectedColumns: [c.name], decision: { kind: 'typo', column: c.name } }));
+                { affectedColumns: [c.name], decision: { kind: 'typo', column: c.name }, rowMatch: typoMatch(c.name, groups) }));
         }
     }
     // 2c. Sign / range / delimited-cell / completeness flags.
@@ -1988,7 +1989,7 @@ function layer5b_hardening(
             const neg = detectSignAnomalies(c.name, vals);
             if (neg > 0) logs.push(log('Sign Anomaly Flag', 6, 'info',
                 `Column '${c.name}': ${neg} negative value(s) in a field that is usually non-negative. Verify these are intentional.`,
-                { affectedColumns: [c.name], affectedRows: neg }));
+                { affectedColumns: [c.name], affectedRows: neg, rowMatch: { column: c.name, negative: true } }));
             const range = detectRangeAnomalies(c.name, vals);
             if (range) logs.push(log('Range Anomaly Flag', 6, 'info',
                 `Column '${c.name}': ${range.count} value(s) are ${range.kind}. Verify units/entry.`,
@@ -2301,6 +2302,12 @@ function buildTimeContext(rows: Record<string, any>[], columns: ColumnDefinition
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  MAIN PIPELINE: runETLPipeline                                  ║
 // ╚══════════════════════════════════════════════════════════════════╝
+
+/** Removed rows kept with a log entry, so "View rows" can list them (stays on this computer). */
+const ROWS_KEPT_FOR_VIEW = 200;
+/** The rows a typo flag is about: every spelling in its groups. */
+const typoMatch = (column: string, groups: { canonical: string; variants: string[] }[]) =>
+    ({ column, values: [...new Set(groups.flatMap(g => [g.canonical, ...g.variants]))] });
 
 export function runETLPipeline(
     rawData: Record<string, any>[],
