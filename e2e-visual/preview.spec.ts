@@ -39,6 +39,28 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `07-sample-changes-${theme}`);
     });
 
+    test(`cleaning is for admins only ${theme}`, async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'AI_SQL', { noData: true, role: 'contributor' });
+        const noData = page.getByRole('region', { name: /no data yet/ }).first();
+        await noData.waitFor({ timeout: 20000 });
+        await noData.getByRole('button', { name: 'Try it with sample data' }).click();
+        const ready = page.getByRole('dialog', { name: /ready for analysis/ });
+        await ready.waitFor({ timeout: 60000 });
+        // No way into the cleaning from the pop-up...
+        await expect(ready.getByRole('button', { name: 'View data changes' })).toHaveCount(0);
+        await ready.getByRole('button', { name: 'Close' }).click();
+        // ...or from the workspace.
+        await page.getByRole('button', { name: 'Dataset Workspace', exact: true }).first().click();
+        const tabs = page.getByRole('tablist', { name: 'Dataset workspace' });
+        await expect(tabs.getByRole('tab', { name: 'Overview', exact: true })).toBeVisible();
+        await expect(tabs.getByRole('tab', { name: 'Columns', exact: true })).toBeVisible();
+        await expect(tabs.getByRole('tab', { name: 'Cleaning', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /See what was checked|Review and decide/ })).toHaveCount(0);
+        await shoot(page, `08-contributor-workspace-${theme}`);
+    });
+
     test(`dashboard ${theme}`, async ({ page }) => {
         await page.setViewportSize({ width: 1440, height: 1700 });
         await boot(page, theme, 'DASHBOARD');

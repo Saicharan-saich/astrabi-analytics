@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { NoDataYet } from './NoDataYet';
 import { ChevronDown, ChevronRight, Columns3, Compass, Download, MessageCircleQuestion, Upload, Zap } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useAuthStore } from '../store/useAuthStore';
+import { canUseCleaning } from '../utils/cleaningAccess';
 import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions, Tab } from '../types';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { DataReadyChecklist, ReadySummary } from './DataReadyChecklist';
@@ -55,10 +57,10 @@ interface DatasetSummaryViewProps {
     mappingPending?: boolean;
 }
 
-const viewFor = (section: DatasetWorkspaceSection): View =>
+const viewFor = (section: DatasetWorkspaceSection, cleaning = true): View =>
     section === 'explore' ? 'data'
         : section === 'mapping' ? 'columns'
-            : section === 'cleaned' || section === 'studio' ? 'cleaning'
+            : section === 'cleaned' || section === 'studio' ? (cleaning ? 'cleaning' : 'overview')
                 : section === 'schema' ? 'relationships'
                     : 'overview';
 
@@ -286,16 +288,20 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     onAskAiSql,
     mappingPending = false,
 }) => {
-    const [view, setView] = useState<View>(viewFor(initialSection));
+    // The Cleaning workspace is for admins only; other roles never see it.
+    const isAdminCleaner = canUseCleaning(useAuthStore(state => state.currentUser));
+    const [view, setView] = useState<View>(viewFor(initialSection, isAdminCleaner));
     const [cleaningMode, setCleaningMode] = useState<CleaningMode>(initialSection === 'studio' ? 'fix' : 'log');
     /** The full step-by-step list, for anyone who wants every detail. */
     const [showSteps, setShowSteps] = useState(false);
     // Opening the workspace from another route (e.g. after upload) selects that view.
     useEffect(() => {
-        setView(viewFor(initialSection));
+        setView(viewFor(initialSection, isAdminCleaner));
         if (initialSection === 'studio') setCleaningMode('fix');
         if (initialSection === 'cleaned') setCleaningMode('log');
-    }, [initialSection, sectionRequest]);
+    }, [initialSection, sectionRequest, isAdminCleaner]);
+    // Signed in as someone else while Cleaning was open: leave it.
+    useEffect(() => { if (!isAdminCleaner && view === 'cleaning') setView('overview'); }, [isAdminCleaner, view]);
 
     const columnStats = useMemo(() => {
         if (view !== 'overview' || !dataset?.rows || !dataset?.columns) return [];
@@ -327,7 +333,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
         { id: 'overview', label: 'Overview' },
         { id: 'data', label: 'Data' },
         { id: 'columns', label: 'Columns' },
-        { id: 'cleaning', label: 'Cleaning' },
+        ...(isAdminCleaner ? [{ id: 'cleaning' as const, label: 'Cleaning' }] : []),
         ...(hasRelationships || view === 'relationships' ? [{ id: 'relationships' as const, label: 'Relationships' }] : []),
     ];
 
@@ -384,7 +390,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                 <div className="mt-6 space-y-5">
                     {view === 'overview' && facts && (
                         <>
-                            <ReadySummary dataset={dataset} onOpen={() => { setCleaningMode('log'); setView('cleaning'); }} />
+                            <ReadySummary dataset={dataset} onOpen={isAdminCleaner ? () => { setCleaningMode('log'); setView('cleaning'); } : undefined} />
                             <nav className="qi-next" aria-label="What to do next">
                                 <p className="qi-next-label">What would you like to do next?</p>
                                 <div className="qi-next-grid">
@@ -518,7 +524,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                         )
                     )}
 
-                    {view === 'cleaning' && (
+                    {view === 'cleaning' && isAdminCleaner && (
                         <>
                             <div className="flex flex-wrap items-center gap-3">
                                 <div className="qi-ws-segmented inline-flex rounded-lg p-0.5" role="group" aria-label="Cleaning">

@@ -139,17 +139,20 @@ function createCleaningSetupService({ getPool }) {
 
 function registerCleaningSetupRoutes(app, service, { requireAuthenticatedUser }) {
     const send = (res, result) => res.status(result.status).json(result.body);
-    app.get('/api/cleaning-setups', requireAuthenticatedUser, async (req, res) => {
+    // Cleaning is admin-only: other roles can neither read nor change setups.
+    // The role comes from the database on every request (see requireAuthenticatedUser).
+    const onlyAdmins = (req, res, next) => (req.authUser?.role === 'admin' ? next() : res.status(403).json({ error: 'Cleaning setups are for admins only' }));
+    app.get('/api/cleaning-setups', requireAuthenticatedUser, onlyAdmins, async (req, res) => {
         try { res.json(await service.list(req.authUser.userId)); }
         catch (error) { res.status(500).json({ error: 'Could not read your setups' }); }
     });
-    app.put('/api/cleaning-setups/:id', requireAuthenticatedUser, async (req, res) => {
+    app.put('/api/cleaning-setups/:id', requireAuthenticatedUser, onlyAdmins, async (req, res) => {
         try {
             if (req.body?.id !== req.params.id) return res.status(400).json({ error: 'The setup id does not match' });
             send(res, await service.save(req.authUser.userId, req.body));
         } catch (error) { res.status(500).json({ error: 'Could not save the setup' }); }
     });
-    app.delete('/api/cleaning-setups/:id', requireAuthenticatedUser, async (req, res) => {
+    app.delete('/api/cleaning-setups/:id', requireAuthenticatedUser, onlyAdmins, async (req, res) => {
         try { send(res, await service.remove(req.authUser.userId, req.params.id, req.query.at)); }
         catch (error) { res.status(500).json({ error: 'Could not delete the setup' }); }
     });
