@@ -25,6 +25,8 @@ import { useSetupStore } from './store/useSetupStore';
 import { startSetupSync, stopSetupSync, startSharedSetups, stopSharedSetups } from './services/setupSync';
 import { appliedSetup as setupRecord, handSetKinds } from './utils/cleaningSetups';
 import { tablesForSteps } from './utils/stepTables';
+import { runThroughPipeline, uploadPipeline, type AzurePipeline } from './services/azurePipeline';
+import { PipelineRunDialog, type PipelineRun } from './components/PipelineRunDialog';
 import type { AppliedSetup, CleaningSetup } from './types';
 import { buildAutoDashboard } from './services/autoDashboardBuilder';
 import { refreshLiveDataset } from './services/liveRefreshService';
@@ -608,10 +610,33 @@ function App() {
     deleteDatasetFromDB(id);
   };
 
+  // ── Uploads through the client's Azure data pipeline (when one is shared with this account) ──
+  const [pipelineRun, setPipelineRun] = useState<PipelineRun | null>(null);
+  const sendThroughPipeline = async (pipeline: AzurePipeline, file: File) => {
+    const controller = new AbortController();
+    setPipelineRun({ pipeline, file, controller, progress: { stage: 'sending', message: 'Starting', elapsedMs: 0 } });
+    try {
+      const cleaned = await runThroughPipeline(pipeline, file, progress => setPipelineRun(run => (run && run.controller === controller ? { ...run, progress } : run)), { signal: controller.signal });
+      setPipelineRun(null);
+      void processUploadedFile(cleaned);
+    } catch (err: any) {
+      if (controller.signal.aborted) { setPipelineRun(null); return; }
+      setPipelineRun(run => (run && run.controller === controller ? { ...run, error: String(err?.message || err) } : run));
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (/\.(csv|xlsx|xls)$/i.test(file.name) && !isGuest) {
+      const pipeline = await uploadPipeline();
+      if (pipeline) { void sendThroughPipeline(pipeline, file); return; }
+    }
+    void processUploadedFile(file);
+  };
 
+  /** Clean a file in this browser (an upload, or a file the client's pipeline cleaned). */
+  const processUploadedFile = async (file: File) => {
     setProcessing(true);
     setError(null);
 
@@ -2179,6 +2204,7 @@ function App() {
                 <div className={`qi-view h-full w-full ${activeTab === Tab.UPLOAD ? '' : 'hidden'}`}>
                   <UploadView
                     onFileUpload={handleFileUpload}
+                    onPipelineFile={file => { void processUploadedFile(file); }}
                     onSampleLoad={loadSampleData}
                     processing={isProcessing}
                     error={error}
@@ -2383,6 +2409,13 @@ function App() {
             </div>
 
             {/* Data ready: shown once an upload or a connection has been cleaned */}
+            {pipelineRun && (
+              <PipelineRunDialog
+                run={pipelineRun}
+                onUseOriginal={() => { const original = pipelineRun.file; setPipelineRun(null); void processUploadedFile(original); }}
+                onClose={() => setPipelineRun(null)}
+              />
+            )}
             {dataReady && dataset && dataset.id === dataReady.datasetId && (
               <DataReadyDialog
                 dataset={dataset}

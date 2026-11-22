@@ -69,9 +69,12 @@ const billingService = createBillingService({
 const { providerBody, resolveModel } = require('./aiModels');
 const { createClientErrorService, registerClientErrorRoutes } = require('./clientErrors');
 const { createCleaningSetupService, registerCleaningSetupRoutes } = require('./cleaningSetups');
+const { createAzurePipelineService, registerAzurePipelineRoutes } = require('./azurePipelines');
 // Error reports from browsers (quoted text removed), kept 30 days.
 const clientErrorService = createClientErrorService({ getPool: () => authPool });
 const cleaningSetupService = createCleaningSetupService({ getPool: () => authPool });
+// Clients' own Azure storage + Data Factory: the server hands out short-lived links only.
+const azurePipelineService = createAzurePipelineService({ getPool: () => authPool });
 
 // ═══════════════════════════════════════════
 // POSTGRESQL USER PERSISTENCE
@@ -145,6 +148,7 @@ async function initAuthDatabase() {
         await billingService.ensureTables();
         await clientErrorService.ensureTables();
         await cleaningSetupService.ensureTables();
+        await azurePipelineService.ensureTables();
 
         // Create usage_logs table for tracking AI consumption per user
         await authPool.query(`
@@ -679,6 +683,7 @@ registerClientErrorRoutes(app, clientErrorService, {
 });
 // Saved cleaning setups (choices and column names, never rows), kept with the account.
 registerCleaningSetupRoutes(app, cleaningSetupService, { requireAuthenticatedUser });
+registerAzurePipelineRoutes(app, azurePipelineService, { requireAuthenticatedUser });
 
 // Store active connections
 // Value: { type: 'mssql'|'raw'|'pg', pool: ConnectionPool|PgPool, rawConn: Connection, config: Object }

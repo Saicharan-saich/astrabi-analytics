@@ -1,10 +1,13 @@
 import React from 'react';
 import { Upload, FileSpreadsheet, Database, Zap, Trash2, FolderOpen, Clock, Sparkles, BarChart2, Brain, ShieldCheck } from 'lucide-react';
 import { ConnectorsPanel } from './ConnectorsPanel';
+import { AzurePipelinePanel } from './AzurePipelinePanel';
 import { Dataset, LiveConnectionInfo } from '../types';
 
 interface UploadViewProps {
     onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    /** A file the client's Azure pipeline cleaned, opened from its cleaned folder. */
+    onPipelineFile?: (file: File) => void;
     onSampleLoad: () => void;
     processing: boolean;
     error: string | null;
@@ -16,7 +19,7 @@ interface UploadViewProps {
 }
 
 export const UploadView: React.FC<UploadViewProps> = ({
-    onFileUpload, onSampleLoad, processing, error, onConnectorLoad,
+    onFileUpload, onPipelineFile, onSampleLoad, processing, error, onConnectorLoad,
     datasets = [], onLoadDataset, onDeleteDataset, activeDatasetId
 }) => {
     return (
@@ -109,6 +112,8 @@ export const UploadView: React.FC<UploadViewProps> = ({
                         </div>
 
                     </div>
+
+                    {onPipelineFile && <div className="mt-8"><AzurePipelinePanel onOpenFile={onPipelineFile} /></div>}
 
                     {/* Recent Uploads Section */}
                     {datasets.length > 0 && (
