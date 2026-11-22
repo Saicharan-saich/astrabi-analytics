@@ -50,8 +50,10 @@ describe('setups stored with the account', () => {
         expect(insert.params.slice(0, 2)).toEqual(['u1', 'setup_a1']);
         expect((await service.save('u1', { id: 'x' })).status).toBe(400);
         expect((await service.remove('u1', 'setup_a1', 99)).status).toBe(200);
-        expect(calls.at(-1)!.sql).toMatch(/deleted = true/);
-        expect(calls.at(-1)!.params).toEqual(['u1', 'setup_a1', 99]);
+        const marker = calls.find(c => /deleted = true/.test(c.sql))!;
+        expect(marker.params).toEqual(['u1', 'setup_a1', 99]);
+        // Once deleted, it stops reaching the accounts it was shared with.
+        expect(calls.at(-1)!.sql).toMatch(/DELETE FROM cleaning_setup_shares/);
         expect((await service.remove('u1', 'no good', 1)).status).toBe(400);
     });
 });

@@ -25,6 +25,9 @@ interface SetupState {
     /** The account these setups belong to (none = made before signing in). */
     ownerId?: string;
     sync: SetupSyncState;
+    /** Admins: which accounts receive each setup (setup id → user ids), from the account. */
+    shares: Record<string, string[]>;
+    setShares: (shares: Record<string, string[]>) => void;
     saveSetup: (setup: CleaningSetup) => void;
     renameSetup: (id: string, name: string) => void;
     deleteSetup: (id: string) => void;
@@ -46,6 +49,8 @@ export const useSetupStore = create<SetupState>()(
             deleted: {},
             ownerId: undefined,
             sync: { status: 'local' },
+            shares: {},
+            setShares: (shares) => set({ shares }),
             saveSetup: (setup) => set(state => ({ setups: [setup, ...state.setups.filter(s => s.id !== setup.id)] })),
             renameSetup: (id, name) => set(state => ({
                 setups: state.setups.map(s => (s.id === id && name.trim() ? { ...s, name: name.trim(), updatedAt: Date.now() } : s)),
@@ -60,7 +65,7 @@ export const useSetupStore = create<SetupState>()(
                 for (const id of settledDeletes) delete deleted[id];
                 return { setups, ownerId, deleted };
             }),
-            resetFor: (ownerId) => set({ setups: [], deleted: {}, ownerId }),
+            resetFor: (ownerId) => set({ setups: [], deleted: {}, ownerId, shares: {} }),
             setSync: (sync) => set({ sync }),
         }),
         {

@@ -21,7 +21,7 @@ export async function watchSecurityPolicy(page: Page) {
     });
 }
 
-export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string, options: { oldCleaning?: boolean; noData?: boolean; role?: 'admin' | 'contributor' | 'viewer' } = {}) {
+export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string, options: { oldCleaning?: boolean; noData?: boolean; role?: 'admin' | 'contributor' | 'viewer'; api?: (pathname: string, method: string, body: string | null) => unknown } = {}) {
     await watchSecurityPolicy(page);
     const who = { ...user, role: options.role || user.role };
     const dashboard = dashboardFixture();
@@ -29,6 +29,12 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
     const gallery = galleryDashboardFixture();
     await page.route('**/api/**', async route => {
         const pathname = new URL(route.request().url()).pathname;
+        // A test's own replies come first (undefined = use the defaults below).
+        const own = options.api?.(pathname, route.request().method(), route.request().postData());
+        if (own !== undefined) {
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(own), headers: { 'Access-Control-Allow-Origin': '*' } });
+            return;
+        }
         const body = pathname.endsWith('/auth/login') ? { success: true, token, user: who }
             : pathname.endsWith('/auth/verify') ? { success: true, valid: true, user: who }
             : pathname.endsWith('/dashboards') ? (route.request().method() === 'GET' ? { dashboards: [] } : { success: true })

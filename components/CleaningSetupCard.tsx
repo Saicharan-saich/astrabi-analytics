@@ -1,9 +1,77 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, ChevronDown, Download, FileText, Loader2, Pencil, Puzzle, RefreshCw, Trash2, Upload } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, CheckCircle2, ChevronDown, Download, FileText, Loader2, Pencil, Puzzle, RefreshCw, Trash2, Upload, Users } from 'lucide-react';
 import type { AppliedSetup, CleaningSetup, Dataset } from '../types';
 import { useSetupStore } from '../store/useSetupStore';
 import { buildSetup, choicesDiffer, describeSetup, headersOf, pickSetup, readSetupFile, setupFile } from '../utils/cleaningSetups';
 import { SetupHandover } from './SetupHandover';
+import { useAuthStore } from '../store/useAuthStore';
+import { shareSetup } from '../services/setupSync';
+
+const ADMIN_API = ((import.meta as any).env?.VITE_API_URL || 'http://localhost:5002/api').replace(/\/api$/, '');
+interface Person { id: string; name: string; email: string; role: string }
+
+/**
+ * Choose which accounts receive a setup: typically the client's own logins.
+ * They get it on their next sign-in, read-only, and it cleans their uploads.
+ */
+function SharePicker({ setup, onClose }: { setup: CleaningSetup; onClose: () => void }) {
+    const me = useAuthStore(state => state.currentUser);
+    const current = useSetupStore(state => state.shares[setup.id]) || [];
+    const [people, setPeople] = useState<Person[] | null>(null);
+    const [picked, setPicked] = useState<string[]>(current);
+    const [filter, setFilter] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [message, setMessage] = useState<string | null>(null);
+    useEffect(() => {
+        let live = true;
+        fetch(`${ADMIN_API}/api/admin/users`, { headers: { Authorization: `Bearer ${localStorage.getItem('qi_token') || ''}` } })
+            .then(res => res.json())
+            .then(data => {
+                if (!live) return;
+                const list: Person[] = Array.isArray(data?.users) ? data.users.filter((u: any) => u.id !== me?.id && u.is_active !== false).map((u: any) => ({ id: u.id, name: u.name, email: u.email, role: String(u.role || '') })) : [];
+                setPeople(list);
+            })
+            .catch(() => { if (live) { setPeople([]); setMessage('Could not load the accounts. Check the connection and try again.'); } });
+        return () => { live = false; };
+    }, [me?.id]);
+    const shown = (people || []).filter(p => !filter.trim() || `${p.name} ${p.email}`.toLowerCase().includes(filter.trim().toLowerCase()));
+    const toggle = (id: string) => setPicked(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+    const save = async () => {
+        setBusy(true); setMessage(null);
+        const result = await shareSetup(setup.id, picked, me?.id);
+        setBusy(false);
+        if (result.ok) onClose(); else setMessage(result.message || 'Could not share the setup.');
+    };
+    const changed = picked.length !== current.length || picked.some(id => !current.includes(id));
+    return (
+        <div className="qi-share" role="group" aria-label={`Share ${setup.name}`}>
+            <p className="qi-share-intro">Pick the accounts that should clean their files with this setup, usually the client's own logins. They get it the next time they sign in, can't change it, and it never holds their rows.</p>
+            {people === null ? <p className="qi-setup-meta"><Loader2 className="inline h-3 w-3 animate-spin" aria-hidden /> Loading accounts…</p> : (
+                <>
+                    {people.length > 6 && <input className="qi-setup-input" placeholder="Find by name or email" value={filter} onChange={e => setFilter(e.target.value)} aria-label="Find an account" />}
+                    {people.length ? (
+                        <ul className="qi-share-list">
+                            {shown.map(p => (
+                                <li key={p.id}>
+                                    <label>
+                                        <input type="checkbox" checked={picked.includes(p.id)} onChange={() => toggle(p.id)} />
+                                        <span><strong>{p.name}</strong> <em>{p.email}</em></span>
+                                        <span className="qi-share-role">{p.role.toLowerCase()}</span>
+                                    </label>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : <p className="qi-setup-meta">No other accounts yet. Create the client's login in Manage Users first.</p>}
+                </>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className="qi-review-apply" disabled={busy || !changed} onClick={save}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Users className="h-3.5 w-3.5" aria-hidden />} {picked.length ? `Share with ${picked.length} account${picked.length === 1 ? '' : 's'}` : 'Stop sharing'}</button>
+                <button type="button" className="qi-chk-undo" onClick={onClose}>Cancel</button>
+                {message && <span className="qi-setup-meta" role="alert">{message}</span>}
+            </div>
+        </div>
+    );
+}
 
 /**
  * Saved cleaning setups, on the Cleaning tab.
@@ -47,6 +115,8 @@ function SetupList({ setups, current }: { setups: CleaningSetup[]; current?: str
     const [confirm, setConfirm] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [handover, setHandover] = useState<CleaningSetup | null>(null);
+    const [sharing, setSharing] = useState<string | null>(null);
+    const shares = useSetupStore(state => state.shares);
     const fileInput = useRef<HTMLInputElement>(null);
 
     const download = () => {
@@ -83,10 +153,12 @@ function SetupList({ setups, current }: { setups: CleaningSetup[]; current?: str
                                     <strong>{setup.name}{setup.id === current && <span className="qi-setup-tag">This data</span>}</strong>
                                 )}
                                 <span>{describeSetup(setup)}</span>
-                                <span className="qi-setup-meta">{setup.columns.length} columns · saved {day(setup.updatedAt)}{setup.timesUsed ? ` · used ${setup.timesUsed} time${setup.timesUsed === 1 ? '' : 's'}, last on ${day(setup.lastUsedAt)}` : ' · not used yet'}</span>
+                                <span className="qi-setup-meta">{setup.columns.length} columns · saved {day(setup.updatedAt)}{setup.timesUsed ? ` · used ${setup.timesUsed} time${setup.timesUsed === 1 ? '' : 's'}, last on ${day(setup.lastUsedAt)}` : ' · not used yet'}{shares[setup.id]?.length ? ` · shared with ${shares[setup.id].length} account${shares[setup.id].length === 1 ? '' : 's'}` : ''}</span>
+                                {sharing === setup.id && <SharePicker setup={setup} onClose={() => setSharing(null)} />}
                             </div>
                             {editing !== setup.id && (
                                 <div className="qi-setup-actions">
+                                    <button type="button" className="qi-chk-undo" onClick={() => setSharing(sharing === setup.id ? null : setup.id)} aria-expanded={sharing === setup.id} aria-label={`Share ${setup.name} with accounts`}><Users className="h-3 w-3" aria-hidden /> Share</button>
                                     <button type="button" className="qi-chk-undo" onClick={() => setHandover(setup)} aria-label={`Handover page for ${setup.name}`}><FileText className="h-3 w-3" aria-hidden /> Handover page</button>
                                     <button type="button" className="qi-chk-undo" onClick={() => { setEditing(setup.id); setDraft(setup.name); }} aria-label={`Rename ${setup.name}`}><Pencil className="h-3 w-3" aria-hidden /> Rename</button>
                                     {confirm === setup.id ? (

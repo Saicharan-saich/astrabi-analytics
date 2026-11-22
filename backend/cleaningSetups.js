@@ -16,6 +16,7 @@
 
 const MAX_SETUP_BYTES = 256 * 1024;
 const MAX_SETUPS = 500;
+const MAX_SHARES = 200;
 const MAX_COLUMNS = 1000;
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const KINDS = new Set(['METRIC', 'DIMENSION', 'DATE', 'BOOLEAN', 'ID', 'UNKNOWN']);
@@ -89,6 +90,17 @@ function createCleaningSetupService({ getPool }) {
                 PRIMARY KEY (user_id, id)
             )
         `);
+        // Which other accounts receive each setup (the client's own logins).
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS cleaning_setup_shares (
+                owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                setup_id TEXT NOT NULL,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                shared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (owner_id, setup_id, user_id)
+            )
+        `);
+        await pool.query('CREATE INDEX IF NOT EXISTS cleaning_setup_shares_user ON cleaning_setup_shares (user_id)');
     }
 
     /** The person's setups, and the ids of the ones they deleted (with when). */
@@ -96,10 +108,50 @@ function createCleaningSetupService({ getPool }) {
         const pool = getPool();
         if (!pool) return { setups: [], deleted: [] };
         const { rows } = await pool.query('SELECT id, setup, updated_ms, deleted FROM cleaning_setups WHERE user_id = $1 ORDER BY updated_ms DESC LIMIT $2', [userId, MAX_SETUPS * 2]);
+        const shared = await pool.query('SELECT setup_id, user_id FROM cleaning_setup_shares WHERE owner_id = $1', [userId]);
+        const shares = {};
+        for (const row of shared.rows) (shares[row.setup_id] = shares[row.setup_id] || []).push(row.user_id);
         return {
             setups: rows.filter(r => !r.deleted).map(r => r.setup),
             deleted: rows.filter(r => r.deleted).map(r => ({ id: r.id, at: Number(r.updated_ms) })),
+            shares,
         };
+    }
+
+    /** Choose which accounts receive one of this admin's setups (replaces the list). */
+    async function setShares(ownerId, setupId, userIds) {
+        const pool = getPool();
+        if (!pool) return { status: 503, body: { error: 'Sharing is not available right now' } };
+        if (!ID_RE.test(String(setupId || ''))) return { status: 400, body: { error: 'Not a setup id' } };
+        if (!Array.isArray(userIds) || userIds.length > MAX_SHARES || userIds.some(id => typeof id !== 'string' || id.length > 120)) {
+            return { status: 400, body: { error: `Pick up to ${MAX_SHARES} accounts` } };
+        }
+        const own = await pool.query('SELECT 1 FROM cleaning_setups WHERE user_id = $1 AND id = $2 AND NOT deleted', [ownerId, setupId]);
+        if (!own.rows.length) return { status: 404, body: { error: 'Save the setup to your account first' } };
+        const wanted = [...new Set(userIds)].filter(id => id !== ownerId);
+        const found = wanted.length ? (await pool.query('SELECT id FROM users WHERE id = ANY($1::text[])', [wanted])).rows.map(r => r.id) : [];
+        if (found.length !== wanted.length) return { status: 400, body: { error: 'One of those accounts no longer exists' } };
+        await pool.query('DELETE FROM cleaning_setup_shares WHERE owner_id = $1 AND setup_id = $2', [ownerId, setupId]);
+        for (const id of found) {
+            await pool.query('INSERT INTO cleaning_setup_shares (owner_id, setup_id, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [ownerId, setupId, id]);
+        }
+        return { status: 200, body: { success: true, userIds: found } };
+    }
+
+    /** The setups other accounts shared with this person (latest versions; deleted ones drop out). */
+    async function sharedWith(userId) {
+        const pool = getPool();
+        if (!pool) return { setups: [] };
+        const { rows } = await pool.query(`
+            SELECT c.setup, u.name AS owner_name
+            FROM cleaning_setup_shares s
+            JOIN cleaning_setups c ON c.user_id = s.owner_id AND c.id = s.setup_id AND NOT c.deleted
+            JOIN users u ON u.id = s.owner_id
+            WHERE s.user_id = $1
+            ORDER BY c.updated_ms DESC
+            LIMIT $2
+        `, [userId, MAX_SETUPS]);
+        return { setups: rows.map(r => ({ ...r.setup, sharedBy: r.owner_name || 'your data team' })) };
     }
 
     /** Store a setup unless a newer version is already stored. */
@@ -125,16 +177,18 @@ function createCleaningSetupService({ getPool }) {
         if (!pool) return { status: 503, body: { error: 'Saving to your account is not available right now' } };
         if (!ID_RE.test(String(id || ''))) return { status: 400, body: { error: 'Not a setup id' } };
         const when = number(at) || Date.now();
-        await pool.query(`
+        const marked = await pool.query(`
             INSERT INTO cleaning_setups (user_id, id, setup, updated_ms, deleted, saved_at)
             VALUES ($1, $2, '{}', $3, true, NOW())
             ON CONFLICT (user_id, id) DO UPDATE SET setup = '{}', updated_ms = EXCLUDED.updated_ms, deleted = true, saved_at = NOW()
             WHERE cleaning_setups.updated_ms <= EXCLUDED.updated_ms
         `, [userId, id, when]);
+        // Deleted (not an older delete arriving late): it stops reaching the accounts it was shared with.
+        if ((marked?.rowCount || 0) > 0) await pool.query('DELETE FROM cleaning_setup_shares WHERE owner_id = $1 AND setup_id = $2', [userId, id]);
         return { status: 200, body: { success: true } };
     }
 
-    return { ensureTables, list, save, remove };
+    return { ensureTables, list, save, remove, setShares, sharedWith };
 }
 
 function registerCleaningSetupRoutes(app, service, { requireAuthenticatedUser }) {
@@ -142,6 +196,16 @@ function registerCleaningSetupRoutes(app, service, { requireAuthenticatedUser })
     // Cleaning is admin-only: other roles can neither read nor change setups.
     // The role comes from the database on every request (see requireAuthenticatedUser).
     const onlyAdmins = (req, res, next) => (req.authUser?.role === 'admin' ? next() : res.status(403).json({ error: 'Cleaning setups are for admins only' }));
+    // Setups an admin shared with this account: every role may read these (read-only),
+    // so the client's own logins clean their uploads with them.
+    app.get('/api/cleaning-setups/shared', requireAuthenticatedUser, async (req, res) => {
+        try { res.json(await service.sharedWith(req.authUser.userId)); }
+        catch (error) { res.status(500).json({ error: 'Could not read the setups shared with you' }); }
+    });
+    app.put('/api/cleaning-setups/:id/shares', requireAuthenticatedUser, onlyAdmins, async (req, res) => {
+        try { send(res, await service.setShares(req.authUser.userId, req.params.id, req.body?.userIds)); }
+        catch (error) { res.status(500).json({ error: 'Could not share the setup' }); }
+    });
     app.get('/api/cleaning-setups', requireAuthenticatedUser, onlyAdmins, async (req, res) => {
         try { res.json(await service.list(req.authUser.userId)); }
         catch (error) { res.status(500).json({ error: 'Could not read your setups' }); }

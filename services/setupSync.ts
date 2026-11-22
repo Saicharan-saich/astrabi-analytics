@@ -15,11 +15,15 @@ const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:500
 const token = () => (typeof localStorage === 'undefined' ? '' : localStorage.getItem('qi_token') || '');
 const headers = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` });
 
-async function readAccount(): Promise<AccountSetups> {
+async function readAccount(): Promise<AccountSetups & { shares: Record<string, string[]> }> {
     const res = await fetch(`${API_BASE}/cleaning-setups`, { headers: headers() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const body = await res.json();
-    return { setups: Array.isArray(body?.setups) ? body.setups : [], deleted: Array.isArray(body?.deleted) ? body.deleted : [] };
+    return {
+        setups: Array.isArray(body?.setups) ? body.setups : [],
+        deleted: Array.isArray(body?.deleted) ? body.deleted : [],
+        shares: body?.shares && typeof body.shares === 'object' ? body.shares : {},
+    };
 }
 
 let running: Promise<void> | null = null;
@@ -56,6 +60,7 @@ export function syncSetups(userId?: string): Promise<void> {
             for (const d of account.deleted) if ((now.deleted[d.id] ?? Infinity) <= d.at) settled.push(d.id);
             applying = true;
             useSetupStore.getState().replaceAll(plan.keep, userId || now.ownerId || '', settled);
+            useSetupStore.getState().setShares(account.shares);
             applying = false;
             useSetupStore.getState().setSync({ status: 'synced', at: Date.now() });
         } catch (error: any) {
@@ -67,6 +72,68 @@ export function syncSetups(userId?: string): Promise<void> {
         if (again) { again = false; void syncSetups(userId); }
     });
     return running;
+}
+
+/**
+ * Admins: choose which accounts receive a setup. The setup is synced first, so
+ * the account has the version being shared.
+ */
+export async function shareSetup(setupId: string, userIds: string[], userId?: string): Promise<{ ok: boolean; message?: string }> {
+    await syncSetups(userId);
+    const res = await fetch(`${API_BASE}/cleaning-setups/${encodeURIComponent(setupId)}/shares`, { method: 'PUT', headers: headers(), body: JSON.stringify({ userIds }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, message: body?.error || 'Could not share the setup. Try again in a moment.' };
+    const store = useSetupStore.getState();
+    store.setShares({ ...store.shares, [setupId]: Array.isArray(body?.userIds) ? body.userIds : userIds });
+    return { ok: true };
+}
+
+/**
+ * Everyone else (contributors, viewers): the setups an admin shared with this
+ * account, read-only. They clean this person's uploads automatically.
+ */
+export async function loadSharedSetups(userId: string): Promise<void> {
+    const store = useSetupStore.getState();
+    applying = true;
+    if (store.ownerId && store.ownerId !== userId) store.resetFor(userId);
+    applying = false;
+    if (!token()) return;
+    try {
+        const res = await fetch(`${API_BASE}/cleaning-setups/shared`, { headers: headers() });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = await res.json();
+        const received: CleaningSetup[] = Array.isArray(body?.setups) ? body.setups : [];
+        // Keep this browser's use counts for setups it already had.
+        const local = new Map<string, CleaningSetup>(useSetupStore.getState().setups.map(s => [s.id, s] as [string, CleaningSetup]));
+        const merged = received.map(s => {
+            const mine = local.get(s.id);
+            return mine && (mine.timesUsed || 0) > (s.timesUsed || 0) ? { ...s, timesUsed: mine.timesUsed, lastUsedAt: mine.lastUsedAt } : s;
+        });
+        applying = true;
+        useSetupStore.getState().replaceAll(merged, userId, Object.keys(useSetupStore.getState().deleted));
+        applying = false;
+        useSetupStore.getState().setSync({ status: 'synced', at: Date.now() });
+    } catch {
+        applying = false;
+        // Offline: the setups received last time keep working.
+    }
+}
+
+let receiver: string | undefined;
+let lastReceived = 0;
+const onFocus = () => { if (receiver && Date.now() - lastReceived > 2 * 60_000) { lastReceived = Date.now(); void loadSharedSetups(receiver); } };
+
+/** Called at sign-in for non-admins: fetch shared setups now and when the tab is used again. */
+export function startSharedSetups(userId: string): void {
+    receiver = userId;
+    lastReceived = Date.now();
+    void loadSharedSetups(userId);
+    if (typeof window !== 'undefined') window.addEventListener('focus', onFocus);
+}
+
+export function stopSharedSetups(): void {
+    receiver = undefined;
+    if (typeof window !== 'undefined') window.removeEventListener('focus', onFocus);
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;

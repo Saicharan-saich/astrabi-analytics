@@ -22,7 +22,7 @@ import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
 import { fetchAISQLEngineConfig } from './services/ai-sql/engineConfig';
 import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor, datasetSignature } from './services/columnCorrectionsService';
 import { useSetupStore } from './store/useSetupStore';
-import { startSetupSync, stopSetupSync } from './services/setupSync';
+import { startSetupSync, stopSetupSync, startSharedSetups, stopSharedSetups } from './services/setupSync';
 import { appliedSetup as setupRecord, handSetKinds } from './utils/cleaningSetups';
 import { tablesForSteps } from './utils/stepTables';
 import type { AppliedSetup, CleaningSetup } from './types';
@@ -308,13 +308,15 @@ function App() {
       fetchColumnCorrections().catch(() => { /* fail-open */ });
       // Saved cleaning setups follow the account (choices and column names, never
       // rows). Cleaning is admin-only, so only admins sync them.
-      if (canUseCleaning(currentUser)) startSetupSync(currentUser.id);
-      else stopSetupSync();
+      // Everyone else receives the setups an admin shared with them (read-only),
+      // so their uploads are cleaned the same way.
+      if (canUseCleaning(currentUser)) { stopSharedSetups(); startSetupSync(currentUser.id); }
+      else { stopSetupSync(); startSharedSetups(currentUser.id); }
       // Restore user dashboards normally, or perform the one-time legacy
       // dashboard cleanup before anything can be shown after a refresh.
       syncDashboardsFromCloud().catch(() => { /* fail-open: local dashboard state remains usable */ });
     }
-    if (!isAuthenticated && prevAuthRef.current) stopSetupSync();
+    if (!isAuthenticated && prevAuthRef.current) { stopSetupSync(); stopSharedSetups(); }
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated, currentUser]);
 

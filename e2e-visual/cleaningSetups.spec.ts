@@ -93,4 +93,56 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(card).toContainText('used 2 times');
         await card.screenshot({ path: path.join(OUT, `89-setup-list-${theme}.png`) }).catch(() => {});
     });
+
+    test(`cleaning setups: share with the client's login, which cleans its uploads with it (${theme})`, async ({ page }) => {
+        test.setTimeout(180_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        // The engineer, signed in as admin on the client's computer.
+        let sharedBody: string | null = null;
+        await boot(page, theme, 'DASHBOARD', {
+            api: (pathname, method, body) => {
+                if (pathname.endsWith('/admin/users')) return { success: true, users: [
+                    { id: 'visual-user', name: 'Alex Morgan', email: 'visual@example.com', role: 'admin' },
+                    { id: 'acme-1', name: 'Acme Ltd', email: 'finance@acme.example', role: 'contributor' },
+                    { id: 'acme-2', name: 'Acme viewer', email: 'boss@acme.example', role: 'viewer' },
+                ] };
+                if (pathname.endsWith('/shares') && method === 'PUT') { sharedBody = body; return { success: true, userIds: JSON.parse(body || '{}').userIds }; }
+                if (pathname.endsWith('/llm/chat')) return {};
+                return undefined;
+            },
+        });
+        const ready = await upload(page, 'acme_sales_march.csv', salesCsv(3), theme);
+        await ready.getByRole('button', { name: 'Close' }).click();
+        await openCleaning(page);
+        await page.getByLabel('Name it for the client and the file').fill('Acme · monthly sales');
+        await page.getByRole('button', { name: 'Save as a setup' }).click();
+        const card = page.locator('.qi-setup').first();
+        await card.getByRole('button', { name: /Saved setups \(1\)/ }).click();
+        await card.getByRole('button', { name: 'Share Acme · monthly sales with accounts' }).click();
+        const picker = card.getByRole('group', { name: 'Share Acme · monthly sales' });
+        await expect(picker).toContainText('finance@acme.example');
+        await expect(picker).not.toContainText('visual@example.com');
+        await picker.getByRole('checkbox').first().check();
+        await shoot(page, `90-setup-share-${theme}`);
+        await picker.getByRole('button', { name: 'Share with 1 account' }).click();
+        await expect(card).toContainText('shared with 1 account');
+        expect(JSON.parse(sharedBody || '{}')).toEqual({ userIds: ['acme-1'] });
+    });
+
+    test(`cleaning setups: the client's own login receives a shared setup (${theme})`, async ({ page }) => {
+        test.setTimeout(180_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        const shared = {
+            id: 'setup_acme_shared', name: 'Acme · monthly sales', createdAt: 1, updatedAt: 2, sharedBy: 'Priya (data team)',
+            headers: ['Order ID', 'Order Date', 'Region', 'Product', 'Channel', 'Quantity', 'Revenue', 'Discount'],
+            columns: [
+                { name: 'order_id', type: 'ID' }, { name: 'order_date', type: 'DATE' }, { name: 'region', type: 'DIMENSION' }, { name: 'product', type: 'DIMENSION' },
+                { name: 'channel', type: 'DIMENSION' }, { name: 'quantity', type: 'METRIC' }, { name: 'revenue', type: 'METRIC' }, { name: 'discount', type: 'METRIC' },
+            ],
+            etlOptions: { blankDecisions: { discount: 'zero' } },
+        };
+        await boot(page, theme, 'DASHBOARD', { role: 'contributor', api: pathname => (pathname.endsWith('/cleaning-setups/shared') ? { setups: [shared] } : undefined) });
+        const ready = await upload(page, 'acme_sales_april.csv', salesCsv(4), theme, '90-shared-setup-ready');
+        await expect(ready).toContainText('Cleaned with your saved setup Acme · monthly sales');
+    });
 }

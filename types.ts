@@ -224,6 +224,8 @@ export interface CleaningSetup {
   notes?: string;
   timesUsed?: number;
   lastUsedAt?: number;
+  /** Received from an admin (read-only here): who shared it. */
+  sharedBy?: string;
 }
 
 /** One way a new file differs from the setup it was cleaned with. */

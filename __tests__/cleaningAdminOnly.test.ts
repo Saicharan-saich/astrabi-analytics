@@ -21,7 +21,7 @@ describe('cleaning is for admins only', () => {
         const service = { list: async () => { calls.push('list'); return { setups: [] }; }, save: async () => ({ status: 200, body: {} }), remove: async () => ({ status: 200, body: {} }) };
         const requireAuthenticatedUser = (_req: any, _res: any, next: () => void) => next();
         setupRoutes.registerCleaningSetupRoutes(app, service, { requireAuthenticatedUser });
-        expect(Object.keys(routes).sort()).toEqual(['DELETE /api/cleaning-setups/:id', 'GET /api/cleaning-setups', 'PUT /api/cleaning-setups/:id']);
+        expect(Object.keys(routes).sort()).toEqual(['DELETE /api/cleaning-setups/:id', 'GET /api/cleaning-setups', 'GET /api/cleaning-setups/shared', 'PUT /api/cleaning-setups/:id', 'PUT /api/cleaning-setups/:id/shares']);
         const run = async (key: string, role: string) => {
             const res: any = { code: 200, body: undefined, status(c: number) { this.code = c; return this; }, json(b: unknown) { this.body = b; return this; } };
             const req: any = { authUser: { userId: 'u1', role }, params: { id: 's1' }, body: { id: 's1' }, query: {} };
@@ -31,7 +31,8 @@ describe('cleaning is for admins only', () => {
             await next();
             return res;
         };
-        for (const key of Object.keys(routes)) {
+        // Reading what was shared with you is open to every role (see setupSharing.test.ts).
+        for (const key of Object.keys(routes).filter(k => k !== 'GET /api/cleaning-setups/shared')) {
             for (const role of ['contributor', 'viewer']) {
                 const res = await run(key, role);
                 expect([key, role, res.code, res.body]).toEqual([key, role, 403, { error: 'Cleaning setups are for admins only' }]);
