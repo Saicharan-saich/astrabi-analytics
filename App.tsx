@@ -50,6 +50,7 @@ import clsx from 'clsx';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAppStore, syncDashboardsFromCloud } from './store/useAppStore';
 import { useAuthStore, ROLE_PERMISSIONS } from './store/useAuthStore';
+import { canUseCleaning } from './utils/cleaningAccess';
 import { ThemeProvider } from './components/ThemeProvider';
 import { OnboardingTour } from './components/OnboardingTour';
 import { DatasetSwitcher } from './components/DatasetSwitcher';
@@ -305,8 +306,10 @@ function App() {
       // Prime the remembered column-classification cache so future uploads can
       // auto-apply corrections. Metadata only (columnName → role) — never data.
       fetchColumnCorrections().catch(() => { /* fail-open */ });
-      // Saved cleaning setups follow the account (choices and column names, never rows).
-      startSetupSync(currentUser.id);
+      // Saved cleaning setups follow the account (choices and column names, never
+      // rows). Cleaning is admin-only, so only admins sync them.
+      if (canUseCleaning(currentUser)) startSetupSync(currentUser.id);
+      else stopSetupSync();
       // Restore user dashboards normally, or perform the one-time legacy
       // dashboard cleanup before anything can be shown after a refresh.
       syncDashboardsFromCloud().catch(() => { /* fail-open: local dashboard state remains usable */ });
@@ -2382,7 +2385,7 @@ function App() {
               <DataReadyDialog
                 dataset={dataset}
                 source={dataReady.source}
-                onViewChanges={() => { setDataReady(null); setActiveTab(Tab.ETL); }}
+                onViewChanges={canUseCleaning(currentUser) ? () => { setDataReady(null); setActiveTab(Tab.ETL); } : undefined}
                 onContinue={() => openAiSqlWelcome(dataset.id)}
                 onClose={() => setDataReady(null)}
               />

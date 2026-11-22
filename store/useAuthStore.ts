@@ -420,6 +420,8 @@ export const ROLE_PERMISSIONS = {
         canManageUsers: true,
         canEditSchema: true,
         canManageQuestions: true,
+        /** The Cleaning workspace (checklist, your steps, saved setups) is for admins only. */
+        canClean: true,
     },
     [UserRole.CONTRIBUTOR]: {
         label: 'Contributor',
@@ -431,6 +433,7 @@ export const ROLE_PERMISSIONS = {
         canManageUsers: false,
         canEditSchema: true,
         canManageQuestions: false,
+        canClean: false,
     },
     [UserRole.VIEWER]: {
         label: 'Viewer',
@@ -442,5 +445,6 @@ export const ROLE_PERMISSIONS = {
         canManageUsers: false,
         canEditSchema: false,
         canManageQuestions: false,
+        canClean: false,
     },
 };

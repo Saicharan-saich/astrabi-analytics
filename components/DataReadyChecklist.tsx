@@ -317,7 +317,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
 };
 
 /** The overview's one-line status, pointing to the checklist. */
-export const ReadySummary: React.FC<{ dataset: Dataset; onOpen: () => void }> = ({ dataset, onOpen }) => {
+export const ReadySummary: React.FC<{ dataset: Dataset; onOpen?: () => void }> = ({ dataset, onOpen }) => {
     const ready = useMemo(() => buildReadiness(dataset), [dataset]);
     const older = useMemo(() => cleanedByOlderVersion(dataset.etlLogs), [dataset.etlLogs]);
     if (!ready.fixed.length && !ready.needsYou.length && !ready.blanks.length && !ready.totals && !older.stale) return null;
@@ -335,7 +335,7 @@ export const ReadySummary: React.FC<{ dataset: Dataset; onOpen: () => void }> = 
             <div>
                 <strong>{toDecide || older.stale ? 'Nearly ready' : 'Your data is ready'}{totalsOk && ready.totals ? ' · every total matches your file' : ''}</strong>
                 <p>{parts.join(' · ')}{!totalsOk ? ' · some totals differ from your file' : ''}{older.stale ? ' · cleaned by an earlier version of QuickInsight, worth cleaning again' : ''}</p>
-                <button type="button" className="qi-totals-link" onClick={onOpen}>{attention ? 'Review and decide' : 'See what was checked'}</button>
+                {onOpen && <button type="button" className="qi-totals-link" onClick={onOpen}>{attention ? 'Review and decide' : 'See what was checked'}</button>}
             </div>
         </div>
     );

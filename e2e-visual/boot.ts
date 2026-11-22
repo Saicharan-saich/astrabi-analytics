@@ -21,15 +21,16 @@ export async function watchSecurityPolicy(page: Page) {
     });
 }
 
-export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string, options: { oldCleaning?: boolean; noData?: boolean } = {}) {
+export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string, options: { oldCleaning?: boolean; noData?: boolean; role?: 'admin' | 'contributor' | 'viewer' } = {}) {
     await watchSecurityPolicy(page);
+    const who = { ...user, role: options.role || user.role };
     const dashboard = dashboardFixture();
     const second = secondDashboardFixture();
     const gallery = galleryDashboardFixture();
     await page.route('**/api/**', async route => {
         const pathname = new URL(route.request().url()).pathname;
-        const body = pathname.endsWith('/auth/login') ? { success: true, token, user }
-            : pathname.endsWith('/auth/verify') ? { success: true, valid: true, user }
+        const body = pathname.endsWith('/auth/login') ? { success: true, token, user: who }
+            : pathname.endsWith('/auth/verify') ? { success: true, valid: true, user: who }
             : pathname.endsWith('/dashboards') ? (route.request().method() === 'GET' ? { dashboards: [] } : { success: true })
             : pathname.endsWith('/billing/status') ? {
                 success: true, plan: { id: 'solo', name: 'Solo' }, status: 'trial', trialEndsAt: new Date(Date.now() + 9.5 * 86_400_000).toISOString(), periodEnd: null,

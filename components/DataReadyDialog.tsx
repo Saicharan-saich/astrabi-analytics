@@ -11,7 +11,8 @@ import { summariseDataReady } from '../services/dataReadySummary';
 interface Props {
     dataset: Dataset;
     source: 'upload' | 'connector' | 'sample';
-    onViewChanges: () => void;
+    /** Admins only: opens the Cleaning workspace. */
+    onViewChanges?: () => void;
     onContinue: () => void;
     onClose: () => void;
 }
@@ -98,9 +99,11 @@ export function DataReadyDialog({ dataset, source, onViewChanges, onContinue, on
                 </div>
 
                 <div className="qi-ready-actions">
-                    <button type="button" className="qi-ready-secondary" onClick={onViewChanges}>
-                        <Eye className="h-4 w-4" aria-hidden /> View data changes
-                    </button>
+                    {onViewChanges && (
+                        <button type="button" className="qi-ready-secondary" onClick={onViewChanges}>
+                            <Eye className="h-4 w-4" aria-hidden /> View data changes
+                        </button>
+                    )}
                     <button ref={primary} type="button" className="qi-ready-primary" onClick={onContinue}>
                         Continue to AI SQL <ArrowRight className="h-4 w-4" aria-hidden />
                     </button>
