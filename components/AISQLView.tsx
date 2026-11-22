@@ -10,7 +10,7 @@ import type { AISQLPipelineResult } from '../services/ai-sql';
 import { asksForColumns, columnsAnswer } from '../services/ai-sql/columnsAnswer';
 import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError, AISQLChatReplyError, AISQLOverviewRequest } from '../services/ai-sql/leanPipeline';
 import { explainAnswer } from '../services/ai-sql/explainAnswer';
-import { buildDatasetOverview } from '../services/ai-sql/datasetOverview';
+import { buildDatasetOverview, buildDeeperOverview } from '../services/ai-sql/datasetOverview';
 import { chatWithAI, type ChatHistoryItem } from '../services/ai-sql/chatReply';
 import {
     classifyTurn, contextForFollowUp, estimateTokens, formatContextForPrompt, suggestFollowUps,
@@ -60,6 +60,18 @@ const readMemory = () => {
 };
 
 const CURRENCY_OF_FORMAT: Record<string, string> = { currency_gbp: 'GBP', currency_eur: 'EUR', currency_usd: 'USD' };
+
+/** "Tell me more", "what else", "dig deeper", "learn more about it": short, and asking for more, not a figure. */
+const MORE = /\b(more|else|deeper|further|another|other things?|investigat\w*|dig)\b/i;
+const asksForMore = (text: string) => {
+    const t = text.trim();
+    return MORE.test(t) && t.split(/\s+/).length <= 12 && !/\b(by|per|than|top|total|average|sum|count|compare|vs|versus)\b|\d/i.test(t);
+};
+/** The latest reply in the chat was an overview (or a deeper look). */
+const lastAnswerIsOverview = (turns: ChatTurn[]) => {
+    const last = [...turns].reverse().find(turn => turn.role === 'assistant' && turn.status === 'done' && (turn.answer || turn.reply));
+    return Boolean(last?.answer?.overview);
+};
 
 /** Where a message goes: conversation (words), analysis (a query), or the local overview. */
 type Route = 'chat' | 'analysis' | 'summary' | 'explain';
@@ -196,7 +208,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     // (and decides itself whether it builds on the last answer) · overview →
     // worked out on this computer. The user can switch before sending.
     const detected = useMemo(() => classifyTurn(draft, answered.length > 0, dataset), [draft, answered.length, dataset]);
-    const detectedRoute: Route = detected.kind === 'chat' ? 'chat' : detected.kind === 'summary' ? 'summary' : detected.kind === 'explain' ? 'explain' : 'analysis';
+    const lastWasOverview = Boolean(active && lastAnswerIsOverview(active.turns));
+    const detectedRoute: Route = lastWasOverview && asksForMore(draft) ? 'summary'
+        : detected.kind === 'chat' ? 'chat' : detected.kind === 'summary' ? 'summary' : detected.kind === 'explain' ? 'explain' : 'analysis';
     const sendRoute: Route = modeOverride || detectedRoute;
     const pendingContext = sendRoute === 'analysis' ? contextForFollowUp(answered, memory) : [];
     useEffect(() => { if (!draft.trim()) setModeOverride(null); }, [draft]);
@@ -220,7 +234,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         const conversationId = active.id;
         const hasAnswer = answeredTurns(active).length > 0;
         const decision = classifyTurn(text, hasAnswer, dataset);
-        const route: Route = forced || (decision.kind === 'chat' ? 'chat' : decision.kind === 'summary' ? 'summary' : decision.kind === 'explain' ? 'explain' : 'analysis');
+        // "Tell me more", "what else" straight after an overview: the next level down, here.
+        const moreOfOverview = lastAnswerIsOverview(active.turns) && asksForMore(text);
+        const route: Route = forced || (moreOfOverview ? 'summary' : decision.kind === 'chat' ? 'chat' : decision.kind === 'summary' ? 'summary' : decision.kind === 'explain' ? 'explain' : 'analysis');
         // With an earlier answer (and Memory on), its question and SQL go with
         // every analysis message; the AI decides whether to build on them.
         const context = contextForFollowUp(answeredTurns(active), memory);
@@ -239,6 +255,26 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         setModeOverride(null);
 
         const showOverview = (lead?: string) => {
+            // Asked again ("tell me more", "what else"): go a level deeper and
+            // never repeat a finding already given in this chat.
+            const earlier = active.turns.filter(turn => turn.role === 'assistant' && turn.answer?.overview).map(turn => turn.answer!);
+            if (earlier.length && dataset) {
+                const deeper = buildDeeperOverview(dataset, earlier.length, earlier.flatMap(a => [a.summary || '', ...(a.insights || [])]));
+                updateTurn(conversationId, userId, { kind: 'summary' });
+                if (deeper.exhausted) {
+                    updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { message: deeper.summary } });
+                    return;
+                }
+                updateTurn(conversationId, assistantId, {
+                    status: 'done', progress: undefined,
+                    answer: {
+                        title: deeper.title, standaloneQuestion: deeper.title, summary: deeper.summary, insights: deeper.insights,
+                        sql: '', rowCount: deeper.rowCount, analysis: deeper.analysis, formatting: deeper.formatting, tokens: 0, overview: true,
+                        explanation: 'Worked out on your computer from all the rows. Nothing was sent to the AI.',
+                    },
+                });
+                return;
+            }
             const answer = overviewAnswer();
             updateTurn(conversationId, userId, { kind: 'summary' });
             updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, ...(lead ? { reply: { message: lead } } : {}), ...(answer ? { answer } : {}) });

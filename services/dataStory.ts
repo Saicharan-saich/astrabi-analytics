@@ -898,3 +898,312 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
         scope,
     };
 }
+
+// ─── a deeper look: "tell me more", "what else" ──────────────────────────
+
+export interface DeeperLook {
+    title: string;
+    /** What was looked into this time, in one or two sentences. */
+    summary: string;
+    findings: StoryFinding[];
+    rowCount: number;
+    /** Nothing new is left to say at this depth. */
+    exhausted: boolean;
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const FINDINGS_PER_LOOK = 4;
+
+/**
+ * Investigations the overview does not make: what drove a change, where
+ * combinations break the usual pattern, how averaged measures differ, what
+ * moves together, weekday rhythm, value per record, and which groups swing.
+ * Each call goes one level deeper and leaves out anything already said.
+ * Worked out from every row on this computer; nothing is sent.
+ */
+export function buildDeeperLook(dataset: Dataset, depth = 1, alreadySaid: string[] = []): DeeperLook {
+    const rows = (dataset.rows || []) as Record<string, any>[];
+    const name = capital(dataset.name.replace(/\.[^.]+$/, '').replace(/^[0-9a-f]{8}[-_ ]/i, '').replace(/[_-]+/g, ' '));
+    const { measures, groupings, idColumn, dateColumn } = profile(dataset, rows);
+    const ranked = [...measures].sort((a, b) => {
+        const score = (m: Measure) => (m.symbol ? 20 : 0) + (REVENUE.test(m.name) ? 12 : 0) + (m.money ? 8 : 0) + (m.agg === 'sum' ? 5 : 0);
+        return score(b) - score(a);
+    });
+    const countMeasure: Measure = { name: '__rows', label: 'rows', agg: 'sum', symbol: '', numberFormat: 'auto', money: false };
+    const main = ranked.find(m => m.agg === 'sum') || countMeasure;
+    const val = (m: Measure, row: Record<string, any>) => (m.name === '__rows' ? 1 : asNumber(row[m.name]));
+    const fmt = (v: number, m: Measure = main) => (m.name === '__rows' ? count(v) : compact(v, m.symbol));
+    const signed = (v: number, m: Measure = main) => `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v), m)}`;
+    const sumBy = (subset: Record<string, any>[], key: (row: Record<string, any>) => string | null, m: Measure = main) => {
+        const out = new Map<string, number>();
+        for (const row of subset) { const k = key(row); const v = val(m, row); if (k === null || v === null) continue; out.set(k, (out.get(k) || 0) + v); }
+        return out;
+    };
+    const total = (subset: Record<string, any>[], m: Measure = main) => subset.reduce((s, row) => s + (val(m, row) ?? 0), 0);
+    const useful = groupings.filter(g => !g.yearLike && g.distinct >= 2 && g.distinct <= 30 && rows.length / g.distinct >= 3);
+    const findings: StoryFinding[] = [];
+    const bar = (data: { group: string; value: number }[], yLabel: string, m: Measure = main): StoryChart =>
+        ({ data, xKey: 'group', yKey: 'value', vis: data.length > 6 ? 'horizontalBar' : 'bar', yLabel, numberFormat: m.numberFormat });
+
+    // ── dates ──
+    const dayOf = (row: Record<string, any>) => (dateColumn ? asDay(row[dateColumn]) : null);
+    const months = dateColumn ? [...new Set(rows.map(dayOf).filter((d): d is string => Boolean(d)).map(d => d.slice(0, 7)))].sort() : [];
+
+    /** Which grouping explains a change between two sets of rows best, and how. */
+    const explainChange = (before: Record<string, any>[], after: Record<string, any>[], window: string, id: string, score: number) => {
+        const change = total(after) - total(before);
+        if (!before.length || !after.length || Math.abs(change) < Math.abs(total(before)) * 0.03) return;
+        let best: { g: Grouping; deltas: { key: string; delta: number }[]; share: number } | undefined;
+        for (const g of useful) {
+            const a = sumBy(before, groupKey(g.name)); const b = sumBy(after, groupKey(g.name));
+            const deltas = [...new Set([...a.keys(), ...b.keys()])].map(key => ({ key, delta: (b.get(key) || 0) - (a.get(key) || 0) }))
+                .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+            const moved = deltas.reduce((s, d) => s + Math.abs(d.delta), 0);
+            // The group that explains it must have moved the same way as the total.
+            if (!moved || deltas.length < 2 || Math.sign(deltas[0].delta) !== Math.sign(change)) continue;
+            const share = Math.abs(deltas[0].delta) / moved;
+            if (!best || share > best.share) best = { g, deltas, share };
+        }
+        if (!best) return;
+        const [first, second] = best.deltas;
+        const against = best.deltas.find(d => Math.sign(d.delta) !== Math.sign(change) && Math.abs(d.delta) >= Math.abs(change) * 0.1);
+        const up = change >= 0;
+        findings.push({
+            id, kind: 'movers', eyebrow: 'Why it changed',
+            headline: `${capital(main.label)} is ${up ? 'up' : 'down'} ${fmt(Math.abs(change))} ${window}, and ${best.g.label} explains most of it: ${first.key} ${signed(first.delta)}${second ? `, ${second.key} ${signed(second.delta)}` : ''}.`,
+            points: [
+                Math.abs(first.delta) > Math.abs(change)
+                    ? `${first.key} moved by more than the whole change (${signed(first.delta)}), because other groups went the other way.`
+                    : `${first.key} alone accounts for ${pct(Math.abs(first.delta) / Math.abs(change))} of the ${up ? 'rise' : 'fall'}.`,
+                ...(against ? [`${against.key} went the other way (${signed(against.delta)}), so without it the ${up ? 'rise' : 'fall'} would have been ${up ? 'bigger' : 'smaller'}.`] : []),
+                `Of the ways to split the data, ${best.g.label} is the one where a single group explains the most of the change.`,
+            ],
+            chart: bar(best.deltas.slice(0, 10).map(d => ({ group: d.key, value: round(d.delta) })), `Change in ${main.label}`),
+            ask: `Why did ${main.label} change by ${best.g.label}?`,
+            score,
+        });
+    };
+    if (months.length >= 6) {
+        const last3 = new Set(months.slice(-3)); const prev3 = new Set(months.slice(-6, -3));
+        const inSet = (set: Set<string>) => rows.filter(row => { const d = dayOf(row); return d !== null && set.has(d.slice(0, 7)); });
+        const label = `in ${periodOf(`${months[months.length - 3]}-01`, 'month').label}–${periodOf(`${months[months.length - 1]}-01`, 'month').label} against the 3 months before`;
+        explainChange(inSet(prev3), inSet(last3), label, 'deeper_recent', 92);
+    }
+    if (months.length >= 15) {
+        const last3 = months.slice(-3);
+        const yearAgo = new Set(last3.map(m => `${Number(m.slice(0, 4)) - 1}${m.slice(4)}`));
+        if ([...yearAgo].every(m => months.includes(m))) {
+            const now = rows.filter(row => { const d = dayOf(row); return d !== null && last3.includes(d.slice(0, 7)); });
+            const then = rows.filter(row => { const d = dayOf(row); return d !== null && yearAgo.has(d.slice(0, 7)); });
+            explainChange(then, now, 'on the same 3 months a year earlier', 'deeper_yoy', 88);
+        }
+    }
+
+    // ── combinations that break the usual pattern ──
+    const pairs = useful.filter(g => g.distinct <= 12);
+    let hotspot: { a: Grouping; b: Grouping; cells: { key: string; actual: number; expected: number }[] } | undefined;
+    let hotspotGap = 0;
+    const grand = total(rows);
+    if (grand > 0) for (let i = 0; i < pairs.length; i++) for (let j = i + 1; j < pairs.length; j++) {
+        const a = pairs[i]; const b = pairs[j];
+        // One inside the other (menu item within menu category): most pairs can
+        // never happen, so "below prediction" would mean nothing.
+        const nested = (outer: Grouping, inner: Grouping) => {
+            const seen = new Map<string, Set<string>>();
+            for (const row of rows) {
+                if (isBlank(row[outer.name]) || isBlank(row[inner.name])) continue;
+                const k = String(row[inner.name]).trim(); const set = seen.get(k) || new Set<string>(); set.add(String(row[outer.name]).trim()); seen.set(k, set);
+            }
+            return [...seen.values()].filter(set => set.size === 1).length >= seen.size * 0.9;
+        };
+        if (nested(a, b) || nested(b, a)) continue;
+        const byA = sumBy(rows, groupKey(a.name)); const byB = sumBy(rows, groupKey(b.name));
+        const cellsMap = sumBy(rows, row => (isBlank(row[a.name]) || isBlank(row[b.name]) ? null : `${String(row[a.name]).trim()} · ${String(row[b.name]).trim()}`));
+        const cells: { key: string; actual: number; expected: number }[] = [];
+        for (const [ka, va] of byA) for (const [kb, vb] of byB) {
+            const expected = (va * vb) / grand;
+            if (expected < grand * 0.02) continue;
+            cells.push({ key: `${ka} · ${kb}`, actual: cellsMap.get(`${ka} · ${kb}`) || 0, expected });
+        }
+        const worst = Math.max(0, ...cells.map(c => Math.abs(c.actual / c.expected - 1)));
+        if (worst > hotspotGap) { hotspotGap = worst; hotspot = { a, b, cells }; }
+    }
+    if (hotspot && hotspotGap >= 0.15) {
+        const sorted = [...hotspot.cells].sort((x, y) => (y.actual / y.expected) - (x.actual / x.expected));
+        const high = sorted[0]; const low = sorted[sorted.length - 1];
+        const gap = (c: { actual: number; expected: number }) => signedPct(c.actual / c.expected - 1);
+        const lead = Math.abs(low.actual / low.expected - 1) >= Math.abs(high.actual / high.expected - 1) ? low : high;
+        const other = lead === low ? high : low;
+        findings.push({
+            id: 'deeper_hotspot', kind: 'contrast', eyebrow: 'Breaks the pattern',
+            headline: `${lead.key} is furthest from what its size predicts: ${fmt(lead.actual)} of ${main.label}, where the usual split of ${hotspot.a.label} and ${hotspot.b.label} would give ${fmt(lead.expected)} (${gap(lead)}).`,
+            points: [
+                `The prediction takes how big ${lead.key.split(' · ')[0]} is overall and how big ${lead.key.split(' · ')[1]} is overall; a gap this size means the two do not simply add up here.`,
+                `At the other end, ${other.key} is ${gap(other)} against its prediction (${fmt(other.actual)} vs ${fmt(other.expected)}).`,
+            ],
+            chart: bar([...hotspot.cells].sort((x, y) => Math.abs(y.actual / y.expected - 1) - Math.abs(x.actual / x.expected - 1)).slice(0, 8)
+                .map(c => ({ group: c.key, value: Math.round((c.actual / c.expected - 1) * 1000) / 10 })), `% above or below prediction`, { ...main, numberFormat: 'auto' }),
+            ask: `Show ${main.label} by ${hotspot.a.label} and ${hotspot.b.label}`,
+            score: 80 + Math.min(10, hotspotGap * 10),
+        });
+    }
+
+    // ── averaged measures (ratings, minutes, prices): who is best and worst ──
+    for (const m of measures.filter(x => x.agg === 'avg' || (x !== main && !x.money && x.agg === 'sum' && /minutes|time|days|hours|duration|rating|score|wait/i.test(x.name)))) {
+        let best: { g: Grouping; top: { key: string; avg: number; n: number }; bottom: { key: string; avg: number; n: number }; spread: number } | undefined;
+        const values = rows.map(row => asNumber(row[m.name])).filter((v): v is number => v !== null);
+        if (values.length < 30) continue;
+        const overall = values.reduce((s, v) => s + v, 0) / values.length;
+        if (!overall) continue;
+        for (const g of useful) {
+            const acc = new Map<string, { s: number; n: number }>();
+            for (const row of rows) { const k = groupKey(g.name)(row); const v = asNumber(row[m.name]); if (k === null || v === null) continue; const e = acc.get(k) || { s: 0, n: 0 }; e.s += v; e.n++; acc.set(k, e); }
+            const groups = [...acc.entries()].filter(([, e]) => e.n >= 15).map(([key, e]) => ({ key, avg: e.s / e.n, n: e.n })).sort((x, y) => y.avg - x.avg);
+            if (groups.length < 2) continue;
+            const spread = (groups[0].avg - groups[groups.length - 1].avg) / Math.abs(overall);
+            if (!best || spread > best.spread) best = { g, top: groups[0], bottom: groups[groups.length - 1], spread };
+        }
+        if (!best || best.spread < 0.08) continue;
+        const f = (v: number) => compact(v, m.symbol);
+        findings.push({
+            id: `deeper_avg_${m.name}`, kind: 'breakdown', eyebrow: `Average ${m.label}`,
+            headline: `Average ${m.label} differs most by ${best.g.label}: ${f(best.top.avg)} for ${best.top.key} against ${f(best.bottom.avg)} for ${best.bottom.key} (overall ${f(overall)}).`,
+            points: [
+                `That is a ${pct(best.spread)} gap relative to the overall average, from ${count(best.top.n)} and ${count(best.bottom.n)} rows, so it is not down to a handful of rows.`,
+            ],
+            ask: `Average ${m.label} by ${best.g.label}`,
+            score: 66 + Math.min(14, best.spread * 20),
+        });
+    }
+
+    // ── what moves together, row by row ──
+    const numeric = measures.filter(m => m.name !== '__rows').slice(0, 10);
+    let pairBest: { a: Measure; b: Measure; r: number } | undefined;
+    for (let i = 0; i < numeric.length; i++) for (let j = i + 1; j < numeric.length; j++) {
+        const a = numeric[i]; const b = numeric[j];
+        const xs: number[] = []; const ys: number[] = [];
+        for (const row of rows) { const x = asNumber(row[a.name]); const y = asNumber(row[b.name]); if (x !== null && y !== null) { xs.push(x); ys.push(y); } }
+        if (xs.length < 30) continue;
+        const mx = xs.reduce((s, v) => s + v, 0) / xs.length; const my = ys.reduce((s, v) => s + v, 0) / ys.length;
+        let sxy = 0, sxx = 0, syy = 0;
+        for (let k = 0; k < xs.length; k++) { sxy += (xs[k] - mx) * (ys[k] - my); sxx += (xs[k] - mx) ** 2; syy += (ys[k] - my) ** 2; }
+        const r = sxx && syy ? sxy / Math.sqrt(sxx * syy) : 0;
+        // Near-perfect pairs are usually one worked out from the other (net = gross − discount).
+        if (Math.abs(r) >= 0.97 || Math.abs(r) < 0.3) continue;
+        const said = alreadySaid.some(text => text.toLowerCase().includes(a.label) && text.toLowerCase().includes(b.label));
+        if (!said && (!pairBest || Math.abs(r) > Math.abs(pairBest.r))) pairBest = { a, b, r };
+    }
+    if (pairBest) {
+        const { a, b, r } = pairBest;
+        const both = rows.map(row => ({ x: asNumber(row[a.name]), y: asNumber(row[b.name]) })).filter((p): p is { x: number; y: number } => p.x !== null && p.y !== null).sort((p, q) => p.x - q.x);
+        const quarter = Math.max(1, Math.floor(both.length / 4));
+        const avgY = (list: { y: number }[]) => list.reduce((s, p) => s + p.y, 0) / list.length;
+        const low = avgY(both.slice(0, quarter)); const high = avgY(both.slice(-quarter));
+        findings.push({
+            id: 'deeper_together', kind: 'relationship', eyebrow: 'Moves together',
+            headline: `When ${a.label} is higher, ${b.label} tends to be ${r > 0 ? 'higher' : 'lower'}: the quarter of rows with the most ${a.label} average ${compact(high, b.symbol)} of ${b.label}, against ${compact(low, b.symbol)} for the quarter with the least.`,
+            points: [
+                `The link is ${Math.abs(r) >= 0.6 ? 'strong' : Math.abs(r) >= 0.45 ? 'clear' : 'moderate'} (correlation ${r.toFixed(2)}). It shows the two go together, not that one causes the other.`,
+            ],
+            ask: `Compare ${b.label} for high and low ${a.label}`,
+            score: 60 + Math.abs(r) * 20,
+        });
+    }
+
+    // ── weekday rhythm ──
+    if (dateColumn && months.length >= 2) {
+        const perDay = new Map<number, { sum: number; dates: Set<string> }>();
+        for (const row of rows) {
+            const d = dayOf(row); const v = val(main, row);
+            if (!d || d.length < 10 || v === null) continue;
+            const wd = new Date(`${d}T12:00:00Z`).getUTCDay();
+            const e = perDay.get(wd) || { sum: 0, dates: new Set<string>() }; e.sum += v; e.dates.add(d); perDay.set(wd, e);
+        }
+        const avg = [...perDay.entries()].filter(([, e]) => e.dates.size >= 4).map(([wd, e]) => ({ wd, avg: e.sum / e.dates.size })).sort((x, y) => y.avg - x.avg);
+        if (avg.length >= 5) {
+            const top = avg[0]; const bottom = avg[avg.length - 1];
+            const lift = bottom.avg ? top.avg / bottom.avg - 1 : 0;
+            if (lift >= 0.15) findings.push({
+                id: 'deeper_weekday', kind: 'breakdown', eyebrow: 'Day of the week',
+                headline: `${WEEKDAYS[top.wd]} is the strongest day: an average ${WEEKDAYS[top.wd]} brings ${fmt(top.avg)} of ${main.label}, ${pct(lift)} more than an average ${WEEKDAYS[bottom.wd]} (${fmt(bottom.avg)}).`,
+                points: [`Averaged per calendar day, so a month with more ${WEEKDAYS[top.wd]}s does not tilt it.`],
+                chart: bar([1, 2, 3, 4, 5, 6, 0].map(wd => avg.find(a => a.wd === wd)).filter((a): a is { wd: number; avg: number } => Boolean(a)).map(a => ({ group: WEEKDAYS[a.wd].slice(0, 3), value: round(a.avg) })), `Average ${main.label} per day`),
+                ask: `${main.label} by day of the week`,
+                score: 58 + Math.min(12, lift * 10),
+            });
+        }
+    }
+
+    // ── value per record ──
+    if (idColumn && main.name !== '__rows') {
+        let best: { g: Grouping; top: { key: string; per: number }; bottom: { key: string; per: number }; spread: number } | undefined;
+        const recordWord = human(idColumn.name).replace(/\s*(id|number|no|num|ref|reference|code|key)$/i, '').trim() || 'record';
+        for (const g of useful) {
+            const acc = new Map<string, { s: number; ids: Set<string> }>();
+            for (const row of rows) {
+                const k = groupKey(g.name)(row); const v = val(main, row); const id = row[idColumn.name];
+                if (k === null || v === null || isBlank(id)) continue;
+                const e = acc.get(k) || { s: 0, ids: new Set<string>() }; e.s += v; e.ids.add(String(id)); acc.set(k, e);
+            }
+            const groups = [...acc.entries()].filter(([, e]) => e.ids.size >= 15).map(([key, e]) => ({ key, per: e.s / e.ids.size })).sort((x, y) => y.per - x.per);
+            if (groups.length < 2 || !groups[groups.length - 1].per) continue;
+            const spread = groups[0].per / groups[groups.length - 1].per - 1;
+            if (!best || spread > best.spread) best = { g, top: groups[0], bottom: groups[groups.length - 1], spread };
+        }
+        if (best && best.spread >= 0.2) findings.push({
+            id: 'deeper_per_record', kind: 'breakdown', eyebrow: `Per ${recordWord}`,
+            headline: `An average ${recordWord} is worth ${fmt(best.top.per)} of ${main.label} for ${best.top.key}, but ${fmt(best.bottom.per)} for ${best.bottom.key}: ${pct(best.spread)} more.`,
+            points: [`So ${best.top.key} gets more from each ${recordWord}, not just more of them.`],
+            ask: `Average ${main.label} per ${recordWord} by ${best.g.label}`,
+            score: 62 + Math.min(10, best.spread * 5),
+        });
+    }
+
+    // ── which groups swing most from month to month ──
+    if (months.length >= 6) {
+        let best: { g: Grouping; key: string; cv: number; lo: number; hi: number } | undefined;
+        for (const g of useful.filter(x => x.distinct <= 15)) {
+            const series = new Map<string, Map<string, number>>();
+            for (const row of rows) {
+                const k = groupKey(g.name)(row); const d = dayOf(row); const v = val(main, row);
+                if (k === null || !d || v === null) continue;
+                const s = series.get(k) || new Map<string, number>(); s.set(d.slice(0, 7), (s.get(d.slice(0, 7)) || 0) + v); series.set(k, s);
+            }
+            for (const [key, s] of series) {
+                const vals = months.map(m => s.get(m) || 0);
+                const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+                if (mean <= 0) continue;
+                const cv = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length) / mean;
+                if (!best || cv > best.cv) best = { g, key, cv, lo: Math.min(...vals), hi: Math.max(...vals) };
+            }
+        }
+        if (best && best.cv >= 0.35) findings.push({
+            id: 'deeper_swing', kind: 'anomaly', eyebrow: 'Least steady',
+            headline: `${best.key} (${best.g.label}) swings the most from month to month: between ${fmt(best.lo)} and ${fmt(best.hi)} of ${main.label}.`,
+            points: [`Its months vary by ${pct(best.cv)} on average around its usual level, so a single month for ${best.key} says little on its own.`],
+            ask: `${main.label} by month for ${best.key}`,
+            score: 54 + Math.min(10, best.cv * 10),
+        });
+    }
+
+    // ── one level deeper each time, never repeating ──
+    const fresh = findings.filter(f => !alreadySaid.some(text => text.trim().startsWith(f.headline))).sort((a, b) => b.score - a.score);
+    const level = Math.max(1, depth);
+    // Earlier looks are in alreadySaid, so the freshest findings come first at every depth.
+    const picked = fresh.slice(0, FINDINGS_PER_LOOK);
+    const topics: Record<string, string> = {
+        deeper_recent: 'what drove the latest change', deeper_yoy: 'what is behind the change on a year ago', deeper_hotspot: 'which combinations break the usual pattern',
+        deeper_together: 'which measures move together', deeper_weekday: 'the weekly rhythm', deeper_per_record: 'value per record', deeper_swing: 'which groups are least steady',
+    };
+    const looked = picked.map(f => topics[f.id] || (f.id.startsWith('deeper_avg_') ? `how ${f.eyebrow.toLowerCase()} differs` : '')).filter(Boolean);
+    const list = looked.length > 1 ? `${looked.slice(0, -1).join(', ')} and ${looked[looked.length - 1]}` : looked[0] || '';
+    return {
+        title: level === 1 ? `A closer look at ${name}` : `Digging further into ${name}`,
+        summary: picked.length
+            ? `Past the headline numbers, I looked into ${list}. Every figure comes from all ${count(rows.length)} rows.`
+            : `That is everything that stands out in ${name} without a more specific question. Ask about one column, group or period to go further.`,
+        findings: picked,
+        rowCount: rows.length,
+        exhausted: picked.length === 0,
+    };
+}

@@ -39,6 +39,30 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `07-sample-changes-${theme}`);
     });
 
+    test(`overview follow-ups go deeper ${theme}`, async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 1100 });
+        await boot(page, theme, 'AI_SQL');
+        const box = page.getByLabel('Ask a question about your data');
+        await box.waitFor({ timeout: 20000 });
+        const ask = async (question: string) => {
+            await box.fill(question);
+            await box.press('Enter');
+            await page.locator('.qi-chat-thinking').waitFor({ state: 'detached', timeout: 30000 }).catch(() => {});
+            await page.waitForTimeout(1200);
+        };
+        await ask('Summarise my data');
+        await expect(page.locator('.qi-chat-row').last()).toContainText('Overview of');
+        // Asked again: a level deeper, on this computer, never the same overview.
+        await ask('Tell me more');
+        const second = page.locator('.qi-chat-row').last();
+        await expect(second).toContainText(/A closer look at|That is everything that stands out/);
+        await expect(second).not.toContainText('Overview of');
+        await shoot(page, `09-overview-deeper-${theme}`);
+        await ask('What else?');
+        await expect(page.locator('.qi-chat-row').last()).toContainText(/Digging further into|That is everything that stands out/);
+    });
+
     test(`dashboard ${theme}`, async ({ page }) => {
         await page.setViewportSize({ width: 1440, height: 1700 });
         await boot(page, theme, 'DASHBOARD');

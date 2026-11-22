@@ -5,7 +5,7 @@
  */
 import { type AnalysisResult, type Dataset, type FormattingConfig, AggregationType, AnalysisType, TimeGrain } from '../../types';
 import { AI_SQL_DEFAULT_FORMATTING } from '../../utils/aiSqlAnswerPresentation';
-import { buildDataStory, type StoryChart } from '../dataStory';
+import { buildDataStory, buildDeeperLook, type StoryChart } from '../dataStory';
 
 export interface DatasetOverview {
     title: string;
@@ -64,5 +64,25 @@ export function buildDatasetOverview(dataset: Dataset, question = ''): DatasetOv
         analysis,
         formatting,
         rowCount: story.rowCount,
+    };
+}
+
+/**
+ * "Tell me more" / "what else" after an overview: the next level down, with
+ * the reasoning behind each finding, never repeating what was already said.
+ */
+export function buildDeeperOverview(dataset: Dataset, depth: number, alreadySaid: string[]): DatasetOverview & { exhausted: boolean } {
+    const look = buildDeeperLook(dataset, depth, alreadySaid);
+    const pick = look.findings.find(f => f.chart);
+    const empty: StoryChart = { data: [], xKey: 'group', yKey: 'value', vis: 'bar', yLabel: '', numberFormat: 'auto' };
+    const { analysis, formatting } = storyChartToAnalysis(pick?.chart || empty, pick?.headline || look.summary);
+    return {
+        title: look.title,
+        summary: look.summary,
+        insights: look.findings.map(f => [f.headline, ...f.points.slice(0, 1)].join(' ')),
+        analysis,
+        formatting,
+        rowCount: look.rowCount,
+        exhausted: look.exhausted,
     };
 }
