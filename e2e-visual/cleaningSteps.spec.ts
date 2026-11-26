@@ -217,8 +217,9 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(table).toContainText('All 2 rows, straight from your cleaned data');
         await expect(table.locator('tbody tr')).toHaveCount(2);
         await expect(table.locator('thead th').nth(1)).toHaveText('food cost');
-        await expect(table.locator('tbody')).toContainText('1,200');
-        await expect(table.locator('tbody')).toContainText('950');
+        // The flagged column can be changed right here.
+        await expect(table.getByLabel('food cost for row 1', { exact: true })).toHaveValue(/^(950|1200)$/);
+        await expect(table.getByLabel('food cost for row 2', { exact: true })).toHaveValue(/^(950|1200)$/);
         await expect(table.getByRole('button', { name: 'Download these rows' })).toBeVisible();
         await shoot(page, `99-view-rows-${theme}`);
         await page.keyboard.press('Escape');
@@ -256,7 +257,7 @@ for (const theme of ['light', 'dark'] as const) {
         const table = page.getByRole('dialog', { name: /12 rows that break a usual pairing/ });
         await expect(table.locator('tbody tr')).toHaveCount(12);
         await table.getByRole('button', { name: 'Fill in the usual menu category' }).click();
-        await expect(table.getByLabel('menu category for row 1')).toHaveValue('Dairy');
+        await expect(table.getByLabel('menu category for row 1', { exact: true })).toHaveValue('Dairy');
         await expect(table).toContainText('12 changes');
         await expect(table).toContainText('Saved as 1 by menu item');
         await shoot(page, `99-fix-rows-${theme}`);
