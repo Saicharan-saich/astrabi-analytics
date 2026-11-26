@@ -6,7 +6,9 @@ import { buildReviewOptions, type StepDecision } from '../utils/cleaningReview';
 import { cleanedByOlderVersion } from '../utils/etlChangeSummary';
 import type { BlankCard } from '../utils/blankChoices';
 import { blankRows, rowsForLog, type ItemChanges, type ItemRows } from '../utils/itemRows';
-import { ViewRowsButton } from './ItemRowsView';
+import { ViewRowsButton, type RowsEditor } from './ItemRowsView';
+import { mergeFixes } from '../services/valueFixes';
+import { ColumnType, type ColumnDefinition } from '../types';
 
 /**
  * "Is your data ready?" — the cleaning as one plain checklist for people who
@@ -54,7 +56,7 @@ function decisionFor(item: ReadyItem, choiceId: string): StepDecision | null {
 
 type RowsView = ItemRows | ItemChanges | null;
 
-function DecisionItem({ item, picked, onPick, view }: { item: ReadyItem; picked?: string; onPick: (choice: string) => void; view: RowsView }) {
+function DecisionItem({ item, picked, onPick, view, editor }: { item: ReadyItem; picked?: string; onPick: (choice: string) => void; view: RowsView; editor?: RowsEditor }) {
     return (
         <li className="qi-chk-item is-decide">
             <div className="qi-chk-item-head">
@@ -74,12 +76,12 @@ function DecisionItem({ item, picked, onPick, view }: { item: ReadyItem; picked?
                     </label>
                 ))}
             </fieldset>
-            <ViewRowsButton title={item.title} view={view} />
+            <ViewRowsButton title={item.title} view={view} editor={editor} />
         </li>
     );
 }
 
-function BlankItem({ card, picked, onPick, view }: { card: BlankCard; picked: BlankChoice; onPick: (choice: BlankChoice) => void; view: RowsView }) {
+function BlankItem({ card, picked, onPick, view, editor }: { card: BlankCard; picked: BlankChoice; onPick: (choice: BlankChoice) => void; view: RowsView; editor?: RowsEditor }) {
     const recommended = card.options.find(o => o.recommended);
     return (
         <li className="qi-chk-item is-blank">
@@ -104,7 +106,7 @@ function BlankItem({ card, picked, onPick, view }: { card: BlankCard; picked: Bl
                 ))}
             </fieldset>
             {recommended && <p className="qi-chk-because"><Info className="h-3.5 w-3.5" aria-hidden /> {card.because}</p>}
-            <ViewRowsButton title={card.headline} view={view} />
+            <ViewRowsButton title={card.headline} view={view} editor={editor} />
         </li>
     );
 }
@@ -149,6 +151,25 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
             return cache.get(item.logIndex)!;
         };
     }, [dataset.etlLogs, dataset.rows]);
+    // Changing values in "View rows": saved as fixes, then cleaned again.
+    const editor = useMemo<RowsEditor | undefined>(() => {
+        if (!onApply) return undefined;
+        const byName = new Map<string, ColumnDefinition>(dataset.columns.map(c => [c.name, c] as [string, ColumnDefinition]));
+        const options = new Map<string, string[]>();
+        return {
+            idColumn: dataset.columns.find(c => c.type === ColumnType.ID)?.name,
+            isNumber: column => byName.get(column)?.type === ColumnType.METRIC,
+            optionsFor: column => {
+                if (!options.has(column)) {
+                    const counts = new Map<string, number>();
+                    for (const row of dataset.rows) { const v = row[column]; if (v !== null && v !== undefined && String(v).trim()) counts.set(String(v), (counts.get(String(v)) || 0) + 1); }
+                    options.set(column, [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 300).map(([v]) => v));
+                }
+                return options.get(column)!;
+            },
+            onSave: fixes => onApply({ ...(dataset.etlOptions || {}), valueFixes: mergeFixes(dataset.etlOptions?.valueFixes, fixes) }, `Your fixes (${fixes.length})`),
+        };
+    }, [onApply, dataset.columns, dataset.rows, dataset.etlOptions]);
     const older = useMemo(() => cleanedByOlderVersion(dataset.etlLogs), [dataset.etlLogs]);
     const [decisions, setDecisions] = useState<Record<string, { decision: StepDecision; label: string }>>({});
     const [blankPicks, setBlankPicks] = useState<Record<string, BlankChoice>>({});
@@ -242,6 +263,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
                                 key={item.id}
                                 item={item}
                                 view={viewOf(item)}
+                                editor={editor}
                                 picked={decisions[item.id]?.decision ? (decisions[item.id].decision as any).choice : undefined}
                                 onPick={choice => {
                                     const decision = decisionFor(item, choice);
@@ -260,7 +282,7 @@ export const DataReadyChecklist: React.FC<Props> = ({ dataset, onApply, onRevert
                     <p className="qi-chk-group-sub">A blank can mean "none", "not recorded" or "does not apply". Each choice shows the numbers you would get.</p>
                     <ul className="qi-chk-list">
                         {shownBlanks.map(card => (
-                            <BlankItem key={card.column} card={card} view={blankRows(card.column, dataset.rows)} picked={blankPicks[card.column] || card.current} onPick={choice => setBlankPicks(prev => ({ ...prev, [card.column]: choice }))} />
+                            <BlankItem key={card.column} card={card} editor={editor} view={blankRows(card.column, dataset.rows)} picked={blankPicks[card.column] || card.current} onPick={choice => setBlankPicks(prev => ({ ...prev, [card.column]: choice }))} />
                         ))}
                     </ul>
                     {ready.blanks.length > BLANKS_SHOWN && (

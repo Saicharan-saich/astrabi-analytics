@@ -23,6 +23,10 @@ export interface StepGuide {
 // Ordered rules — the first whose pattern matches the step name wins.
 const RULES: Array<{ test: RegExp; guide: StepGuide }> = [
     {
+        test: /^your fixes/i,
+        guide: { emoji: '✏️', title: 'Values you changed', what: 'Values changed by hand in View rows, such as a product put back under its right category.', why: 'You know your data: a few rows filed under the wrong category or typed wrongly are corrected, while the rest of each row stays as uploaded.', ifSkipped: 'Those rows would keep the wrong value, so their sales would show under the wrong group.', example: "Milk filed under 'Bakery' → 'Dairy'" },
+    },
+    {
         test: /^your step/i,
         guide: { emoji: '✋', title: 'A step you added', what: 'A cleaning step added by hand in Your steps; it runs on this file and on every later file cleaned with the same setup.', why: 'You added this step in Your steps. Give it a reason there, so anyone reading this knows why it is done.', ifSkipped: 'Answers would use the data without this change.', example: 'Remove rows where the customer contains "test"' },
     },

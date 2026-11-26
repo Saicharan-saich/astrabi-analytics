@@ -94,6 +94,10 @@ const RULES: Record<string, Rule> = {
             ? `Left out ${plural(Math.max(0, l.rowsBefore - l.rowsAfter), 'row')} with no '${c}' (your choice)`
             : /counted as 0/.test(l.details) ? `Counted ${plural(n ?? 0, 'blank')} in '${c}' as 0 (your choice)` : `Filled ${plural(n ?? 0, 'blank')} in '${c}' with the typical value (your choice)`,
     },
+    'Your Fixes': {
+        kind: 'converted',
+        title: (l, n) => (l.status === 'info' ? 'Your fixes found no matching rows in this file' : `Changed ${plural(n ?? l.affectedRows ?? 0, 'value')} by hand (your fixes)`),
+    },
     'Your Step': {
         kind: 'converted',
         title: l => {

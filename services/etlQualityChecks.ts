@@ -38,6 +38,8 @@ interface FlagSpec {
     columns?: string[];
     /** Rows this flag is about. */
     hits: Set<Row>;
+    /** How to find these rows again in the cleaned data (for "View rows"). */
+    rowMatch?: import('../types').RowMatch;
     details: string;
     /** Choices offered, in order; 'keep' is always offered. */
     options: { choice: FlagChoice; label: string }[];
@@ -84,12 +86,13 @@ function applyFlag(rows: Row[], spec: FlagSpec, decisions: Record<string, FlagCh
     }
     if (choice === 'keep') {
         logs.push(entry(`${spec.base} Confirmed`, 'applied', `${spec.details} You checked them and kept them as they are.`,
-            { affectedColumns, affectedRows: spec.hits.size, revert: undo }));
+            { affectedColumns, affectedRows: spec.hits.size, revert: undo, ...(spec.rowMatch ? { rowMatch: spec.rowMatch } : {}) }));
         return rows;
     }
     logs.push(entry(`${spec.base} Flag`, 'info', spec.details, {
         affectedColumns, affectedRows: spec.hits.size, sampleRows: samples,
         decision: { kind: 'flag', column: spec.column, key: spec.key, options: spec.options },
+        ...(spec.rowMatch ? { rowMatch: spec.rowMatch } : {}),
     }));
     return rows;
 }
@@ -217,6 +220,13 @@ function standardFormats(rows: Row[], columns: ColumnDefinition[], decisions: Re
 
 // ── 4. Inconsistent mappings: one product filed under two categories ──
 
+/** The usual pairing per value (only the ones the flag relies on), to find the rows again. */
+function usualPairs(a: string, b: string, dominant: Map<string, { value: string; share: number }>): import('../types').RowMatch | undefined {
+    const usual: Record<string, string> = {};
+    for (const [va, d] of dominant) if (d.share >= 0.8) usual[va] = d.value;
+    return Object.keys(usual).length <= 5000 ? { column: b, by: a, usual } : undefined;
+}
+
 function inconsistentMappings(rows: Row[], columns: ColumnDefinition[], decisions: Record<string, FlagChoice>, logs: ETLLog[]): Row[] {
     let out = rows;
     const dims = columns.filter(c => c.type === ColumnType.DIMENSION).map(c => c.name).slice(0, 14);
@@ -258,6 +268,7 @@ function inconsistentMappings(rows: Row[], columns: ColumnDefinition[], decision
             const d = dominant.get(String(first[a]))!;
             out = applyFlag(out, {
                 key: `mapping:${a}->${b}`, base: 'Inconsistent Mapping', column: b, columns: [a, b], hits,
+                rowMatch: usualPairs(a, b, dominant),
                 details: `Each '${a}' almost always has one '${b}', but ${plural(hits.size, 'row')} disagree${hits.size === 1 ? 's' : ''}: e.g. ${quote(first[a])} is under ${quote(d.value)} ${d.count.toLocaleString()} times but ${quote(first[b])} in some rows.`,
                 options: [{ choice: 'fix', label: `Use the usual ${b.replace(/_/g, ' ')}` }, { choice: 'keep', label: 'Both are correct' }, { choice: 'remove', label: 'Remove these rows' }],
                 fix: row => ({ ...row, [b]: dominant.get(String(row[a]))!.value }), fixedWords: `${plural(hits.size, 'row')} set to the usual ${b.replace(/_/g, ' ')}`,

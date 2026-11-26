@@ -231,4 +231,40 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(removed.locator('tbody tr')).toHaveCount(2);
         await removed.getByRole('button', { name: 'Close' }).click();
     });
+    test(`checklist: fix rows filed under the wrong category (${theme})`, async ({ page }) => {
+        test.setTimeout(180_000);
+        await page.setViewportSize({ width: 1440, height: 950 });
+        await boot(page, theme, 'DASHBOARD');
+        await page.route('**/api/llm/chat', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}', headers: { 'Access-Control-Allow-Origin': '*' } }));
+        // 600 orders; Milk is Dairy, but 12 rows file it under Bakery.
+        const items = [['Milk', 'Dairy'], ['Cheese', 'Dairy'], ['Bread', 'Bakery'], ['Croissant', 'Bakery'], ['Apples', 'Fruit'], ['Bananas', 'Fruit']];
+        const lines = ['Order ID,Order Date,Menu Item,Menu Category,Store,Sales'];
+        let wrong = 0;
+        for (let i = 0; i < 600; i++) {
+            const [item, category] = items[i % items.length];
+            const misfiled = item === 'Milk' && i > 20 && wrong < 12;
+            if (misfiled) wrong++;
+            lines.push(`S${1000 + i},2026-0${1 + (i % 9)}-1${i % 9},${item},${misfiled ? 'Bakery' : category},${['Leeds', 'York'][i % 2]},${5 + (i % 7)}`);
+        }
+        const ready = await upload(page, 'shop_orders.csv', Buffer.from(lines.join('\n') + '\n'));
+        await ready.getByRole('button', { name: 'Close' }).click();
+        await openSteps(page);
+        await page.getByRole('button', { name: 'Checklist', exact: true }).click();
+
+        const item = page.locator('.qi-chk-item').filter({ hasText: /12 rows that break a usual pairing/ }).first();
+        await item.getByRole('button', { name: 'View the 12 rows and fix' }).click();
+        const table = page.getByRole('dialog', { name: /12 rows that break a usual pairing/ });
+        await expect(table.locator('tbody tr')).toHaveCount(12);
+        await table.getByRole('button', { name: 'Fill in the usual menu category' }).click();
+        await expect(table.getByLabel('menu category for row 1')).toHaveValue('Dairy');
+        await expect(table).toContainText('12 changes');
+        await expect(table).toContainText('Saved as 1 by menu item');
+        await shoot(page, `99-fix-rows-${theme}`);
+        await table.getByRole('button', { name: 'Save and clean again' }).click();
+        await expect(table).toHaveCount(0);
+
+        // Cleaned again with the fix: the flag is gone, the fix is listed with an undo.
+        await expect(page.locator('.qi-chk-item').filter({ hasText: /break a usual pairing/ })).toHaveCount(0, { timeout: 30000 });
+        await expect(page.getByText('Changed 12 values by hand (your fixes)').first()).toBeVisible();
+    });
 }

@@ -45,6 +45,9 @@ export interface RowMatch {
   values?: string[];
   negative?: boolean;
   blank?: boolean;
+  /** Pairing flags: rows whose `column` differs from the usual value for their `by` value. */
+  by?: string;
+  usual?: Record<string, string>;
 }
 
 export interface ETLLog {
@@ -70,7 +73,7 @@ export interface ETLLog {
   /** Totals check: each measure's total in the file vs after cleaning. */
   totalsCheck?: { column: string; uploaded: number | null; cleaned: number; blanked: number; changed: number }[];
   /** Re-run the cleaning with this option to reverse (or restore) the step. */
-  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | Record<string, string> | CleaningRule[] | CleaningStep[] | null; label: string };
+  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | Record<string, string> | CleaningRule[] | CleaningStep[] | ValueFix[] | null; label: string };
   /** A flag the user can decide on in the cleaning review. */
   decision?: {
     kind: 'outlier' | 'typo' | 'flag';
@@ -102,7 +105,20 @@ export interface CleaningRule {
 }
 
 /** Cleaning steps a user can reverse after upload. Stored on the dataset so a re-run keeps the choice. */
+/**
+ * A value someone changed by hand in "View rows": in rows where every `where`
+ * column has the given value, set `column` to `to`. Repeats on every re-clean
+ * and on future files (with a saved setup).
+ */
+export interface ValueFix {
+  column: string;
+  where: Record<string, string>;
+  to: string | number | null;
+}
+
 export interface EtlOptions {
+  /** Values changed by hand, applied after values are tidied and before the checks. */
+  valueFixes?: ValueFix[];
   keepDuplicateRows?: boolean;
   keepTotalRows?: boolean;
   keepWideLayout?: boolean;

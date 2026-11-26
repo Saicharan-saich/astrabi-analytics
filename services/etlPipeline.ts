@@ -21,6 +21,7 @@ import { checkTotals, describeTotals } from './totalsCheck';
 import { convertMixedUnits, runQualityChecks } from './etlQualityChecks';
 import { amountsIn, applyBlankDecisions, profileBlanks } from './blankValues';
 import { applySteps, type StepTable } from './cleaningSteps';
+import { applyValueFixes } from './valueFixes';
 
 /** Rows kept from before the person's own steps, for live previews in the steps editor. */
 const STEP_PREVIEW_ROWS = 5000;
@@ -2378,6 +2379,13 @@ export function runETLPipeline(
     rows = l5.rows;
     allLogs.push(...l5.logs);
     console.log(`[ETL L5] Transformed: ${l5.typeCastCount} cell changes`);
+
+    // ── LAYER 5a: values the person changed by hand (before the checks, so a fixed problem is not flagged) ──
+    if (etlOptions.valueFixes?.length) {
+        const fixed = applyValueFixes(rows, l4.columns, etlOptions.valueFixes);
+        rows = fixed.rows;
+        if (fixed.log) allLogs.push(fixed.log);
+    }
 
     // ── LAYER 5b: Correctness Hardening (canonical merges + quality flags) ──
     const l5b = layer5b_hardening(rows, l4.columns, preTransformRows, etlOptions, dayFirst);

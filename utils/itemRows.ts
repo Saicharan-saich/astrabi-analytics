@@ -23,6 +23,8 @@ export interface ItemRows {
     highlight: string[];
     /** Where the rows come from, in plain words. */
     source: 'data' | 'removed' | 'examples';
+    /** Rows from the data whose values can be changed here: this column (with the usual value per `by` value, for pairings). */
+    edit?: { column: string; by?: string; usual?: Record<string, string> };
 }
 export interface ItemChanges {
     mode: 'changes';
@@ -49,12 +51,41 @@ export function rowMatches(row: Row, match: RowMatch): boolean {
         return n < match.outside[0] || n > match.outside[1];
     }
     if (match.negative) { const n = asNumber(v); return n !== null && n < 0; }
+    if (match.by && match.usual) {
+        const by = row[match.by];
+        if (isBlank(by) || isBlank(v)) return false;
+        const usual = match.usual[String(by)];
+        return usual !== undefined && String(v) !== usual;
+    }
     if (match.values) return !isBlank(v) && match.values.includes(String(v).trim());
     return false;
 }
 
+/** A pairing flag cleaned before matches were recorded: work out the usual pairs again. */
+function legacyPairing(log: ETLLog, rows: Row[]): RowMatch | undefined {
+    const key = /^mapping:(.+)->(.+)$/.exec(log.decision?.key || '');
+    if (!key) return undefined;
+    const [, a, b] = key;
+    const counts = new Map<string, Map<string, number>>();
+    for (const row of rows) {
+        if (isBlank(row[a]) || isBlank(row[b])) continue;
+        const inner = counts.get(String(row[a])) || new Map<string, number>();
+        inner.set(String(row[b]), (inner.get(String(row[b])) || 0) + 1);
+        counts.set(String(row[a]), inner);
+    }
+    const usual: Record<string, string> = {};
+    for (const [va, inner] of counts) {
+        const sum = [...inner.values()].reduce((s, n) => s + n, 0);
+        if (sum < 3) continue;
+        const [value, count] = [...inner.entries()].sort((x, y) => y[1] - x[1])[0];
+        if (count / sum >= 0.8) usual[va] = value;
+    }
+    return { column: b, by: a, usual };
+}
+
 /** Entries cleaned before matches were recorded: read the range from the words. */
-function legacyMatch(log: ETLLog): RowMatch | undefined {
+function legacyMatch(log: ETLLog, rows: Row[] = []): RowMatch | undefined {
+    if (log.decision?.key?.startsWith('mapping:')) return legacyPairing(log, rows);
     if (!/^Outlier (Flag|Confirmed)$/.test(log.step)) return undefined;
     const column = log.decision?.column || log.affectedColumns?.[0];
     const range = /range \[(-?[\d.]+), (-?[\d.]+)\]/.exec(log.details || '');
@@ -65,10 +96,15 @@ function legacyMatch(log: ETLLog): RowMatch | undefined {
 export function rowsForLog(log: ETLLog | undefined, rows: Row[]): ItemRows | ItemChanges | null {
     if (!log) return null;
     const highlight = log.rowMatch ? [log.rowMatch.column] : (log.affectedColumns || []).slice(0, 3);
-    const match = log.rowMatch || legacyMatch(log);
+    const match = log.rowMatch || legacyMatch(log, rows);
     if (match) {
         const found = rows.filter(row => rowMatches(row, match));
-        if (found.length) return { mode: 'rows', rows: found, total: found.length, highlight: [match.column], source: 'data' };
+        if (found.length) {
+            return {
+                mode: 'rows', rows: found, total: found.length, highlight: match.by ? [match.by, match.column] : [match.column], source: 'data',
+                edit: { column: match.column, ...(match.by ? { by: match.by, usual: match.usual } : {}) },
+            };
+        }
     }
     if (log.removedRowSamples?.length) {
         const removed = log.rowsBefore !== undefined && log.rowsAfter !== undefined ? log.rowsBefore - log.rowsAfter : (log.affectedRows || 0);
@@ -86,7 +122,7 @@ export function rowsForLog(log: ETLLog | undefined, rows: Row[]): ItemRows | Ite
 /** Blank cells still blank in the cleaned data. */
 export function blankRows(column: string, rows: Row[]): ItemRows | null {
     const found = rows.filter(row => isBlank(row[column]));
-    return found.length ? { mode: 'rows', rows: found, total: found.length, highlight: [column], source: 'data' } : null;
+    return found.length ? { mode: 'rows', rows: found, total: found.length, highlight: [column], source: 'data', edit: { column } } : null;
 }
 
 /** The button's words: "View the 18 rows", "View 10 of 240 removed rows"… */
