@@ -259,7 +259,7 @@ for (const theme of ['light', 'dark'] as const) {
         await table.getByRole('button', { name: 'Fill in the usual menu category' }).click();
         await expect(table.getByLabel('menu category for row 1', { exact: true })).toHaveValue('Dairy');
         await expect(table).toContainText('12 changes');
-        await expect(table).toContainText('Saved as 1 by menu item');
+        await expect(table).toContainText('Saves as 1 fix for each menu item');
         await shoot(page, `99-fix-rows-${theme}`);
         await table.getByRole('button', { name: 'Save and clean again' }).click();
         await expect(table).toHaveCount(0);

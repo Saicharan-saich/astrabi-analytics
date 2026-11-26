@@ -33,12 +33,12 @@ function cell(value: unknown): { text: string; blank: boolean; number: boolean }
     return { text: String(value), blank: false, number: false };
 }
 
-function sourceLine(view: ItemRows | ItemChanges): string {
+function sourceLine(view: ItemRows | ItemChanges, editable = false): string {
     const n = (x: number) => x.toLocaleString('en-GB');
     if (view.mode === 'changes') return view.total > view.changes.length
         ? `Examples of the values this step changed: ${n(view.changes.length)} of ${n(view.total)}.`
         : 'Every value this step changed, before and after.';
-    if (view.source === 'data') return `All ${n(view.total)} row${view.total === 1 ? '' : 's'}, straight from your cleaned data. Viewing changes nothing.`;
+    if (view.source === 'data') return `All ${n(view.total)} row${view.total === 1 ? '' : 's'}, straight from your cleaned data. ${editable ? 'Nothing changes until you save.' : 'Viewing changes nothing.'}`;
     if (view.source === 'removed') return view.rows.length < view.total
         ? `These rows were taken out of the analysis. The first ${n(view.rows.length)} of ${n(view.total)} were kept to show here.`
         : 'These rows were taken out of the analysis. Undo the step to put them back.';
@@ -113,7 +113,7 @@ function RowsDialog({ title, view, onClose, editor }: { title: string; view: Ite
                 <header className="qi-rows-head">
                     <div className="min-w-0">
                         <h2 id="qi-rows-title">{title}</h2>
-                        <p>{sourceLine(view)}</p>
+                        <p>{sourceLine(view, Boolean(edit))}</p>
                     </div>
                     <div className="flex shrink-0 gap-2">
                         {edit?.by && edit.usual && <button type="button" className="qi-chk-undo" onClick={fillUsual}><Wand2 className="h-3.5 w-3.5" aria-hidden /> Fill in the usual {label(edit.column)}</button>}
@@ -122,7 +122,7 @@ function RowsDialog({ title, view, onClose, editor }: { title: string; view: Ite
                     </div>
                 </header>
                 {edit && (
-                    <p className="qi-rows-edit-note"><Pencil className="h-3.5 w-3.5" aria-hidden /> Change any value in <strong>{label(edit.column)}</strong> below. Changes are kept as your fixes: they repeat every time this file is cleaned, and on next month’s file with a saved setup. Undo them from the checklist at any time.</p>
+                    <p className="qi-rows-edit-note"><Pencil className="h-3.5 w-3.5" aria-hidden /><span>Change any value in <strong>{label(edit.column)}</strong> below. Changes are kept as your fixes: they repeat every time this file is cleaned, and on next month’s file with a saved setup. Undo them from the checklist at any time.</span></p>
                 )}
                 {edit && <datalist id="qi-rows-options">{editor!.optionsFor(edit.column).map(v => <option key={v} value={v} />)}</datalist>}
                 <div className="qi-rows-table" tabIndex={0} aria-label={`${title}: table`}>

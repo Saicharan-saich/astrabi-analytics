@@ -52,10 +52,11 @@ export function fixesFromEdits(
     }
 
     const parts: string[] = [];
-    if (forPairs) parts.push(`${forPairs} by ${word(by!)}, so next month’s file is fixed the same way`);
-    if (forRows) parts.push(`${forRows} for single rows, by ${word(idColumn!)}`);
-    if (forValues) parts.push(`${forValues} for every row with the same ${by ? `${word(by)} and ${word(column)}` : word(column)} (the file has no ID to tell rows apart)`);
+    const fixWord = (n: number) => `${n} fix${n === 1 ? '' : 'es'}`;
+    if (forPairs) parts.push(`${fixWord(forPairs)} for each ${word(by!)}, so next month’s file is fixed the same way`);
+    if (forRows) parts.push(`${fixWord(forRows)} for single rows, by ${word(idColumn!)}`);
+    if (forValues) parts.push(`${fixWord(forValues)} for every row with the same ${by ? `${word(by)} and ${word(column)}` : word(column)} (the file has no ID to tell rows apart)`);
     const notNumbers = isNumber ? [...edits.values()].filter(v => v.trim() && !Number.isFinite(Number(v.replace(/[£$€,\s]/g, '')))) : [];
     const warn = notNumbers.length ? ` '${notNumbers[0]}' is not a number, so it would be left blank.` : '';
-    return { fixes: [...fixes.values()], summary: `Saved as ${parts.join('; ')}.${warn}` };
+    return { fixes: [...fixes.values()], summary: `Saves as ${parts.join('; ')}.${warn}` };
 }

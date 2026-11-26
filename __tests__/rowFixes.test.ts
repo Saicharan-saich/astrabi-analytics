@@ -48,7 +48,7 @@ describe('every row a pairing flag is about, and fixing them', () => {
         const edits = new Map(view.rows.map((_, i) => [i, 'Dairy'] as [number, string]));
         const plan = fixesFromEdits(view.rows, edits, { column: 'menu_category', by: 'menu_item', idColumn: 'order_id' });
         expect(plan.fixes).toEqual([{ column: 'menu_category', where: { menu_item: 'Milk', menu_category: 'Bakery' }, to: 'Dairy' }]);
-        expect(plan.summary).toMatch(/^Saved as 1 by menu item, so next month’s file is fixed the same way\./);
+        expect(plan.summary).toMatch(/^Saves as 1 fix for each menu item, so next month’s file is fixed the same way\./);
         expect(describeFix(plan.fixes[0])).toBe("Set 'menu category' to 'Dairy' where 'menu item' is 'Milk' and 'menu category' is 'Bakery'");
 
         const again = runETLPipeline(shop(), 'shop.csv', undefined, { valueFixes: plan.fixes });
@@ -65,7 +65,7 @@ describe('every row a pairing flag is about, and fixing them', () => {
         const rows = [{ id: 'A', item: 'Milk', cat: 'Bakery' }, { id: 'B', item: 'Milk', cat: 'Bakery' }, { id: 'C', item: 'Bread', cat: 'Dairy' }];
         const some = fixesFromEdits(rows, new Map([[0, 'Dairy']]), { column: 'cat', by: 'item', idColumn: 'id' });
         expect(some.fixes).toEqual([{ column: 'cat', where: { id: 'A' }, to: 'Dairy' }]);
-        expect(some.summary).toMatch(/1 for single rows, by id/);
+        expect(some.summary).toMatch(/1 fix for single rows, by id/);
         const noId = fixesFromEdits(rows, new Map([[2, ' ']]), { column: 'cat' });
         expect(noId.fixes).toEqual([{ column: 'cat', where: { cat: 'Dairy' }, to: null }]);
         expect(noId.summary).toMatch(/every row with the same cat/);
