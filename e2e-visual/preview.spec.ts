@@ -161,6 +161,8 @@ for (const theme of ['light', 'dark'] as const) {
         }
         await nav.click();
         const ask = page.getByRole('region', { name: 'Ask in your own words' });
+        // Examples appear while the box is in use.
+        await ask.getByLabel('Ask in your own words').focus();
         await expect(ask.getByLabel('Examples')).toBeVisible();
         await ask.getByLabel('Ask in your own words').fill('top 5 products by profit in 2025');
         await ask.getByLabel('Ask in your own words').press('Enter');

@@ -12,6 +12,8 @@ const SLOT_WORD: Record<string, string> = { measure: 'Show me', split: 'Split', 
 export const AskInWords: React.FC<{ dataset: Dataset; asOf?: string; onAsk: (config: Record<string, unknown>) => void; examples?: string[] }> = ({ dataset, asOf, onAsk, examples = [] }) => {
     const [text, setText] = useState('');
     const [last, setLast] = useState<(WordsQuestion & { asked: string }) | null>(null);
+    // Examples show while the box is in use, so the builder's controls keep their room.
+    const [focused, setFocused] = useState(false);
     const ask = (question = text) => {
         const q = question.trim();
         if (!q) return;
@@ -30,6 +32,8 @@ export const AskInWords: React.FC<{ dataset: Dataset; asOf?: string; onAsk: (con
                     aria-label="Ask in your own words"
                     autoComplete="off"
                     spellCheck
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
                 />
                 <button type="submit" className="qi-ask-go" disabled={!text.trim()} aria-label="Build this question"><ArrowRight className="h-4 w-4" aria-hidden /></button>
             </form>
@@ -44,11 +48,12 @@ export const AskInWords: React.FC<{ dataset: Dataset; asOf?: string; onAsk: (con
                     )}
                     <button type="button" className="qi-ask-close" aria-label="Hide what was understood" onClick={() => setLast(null)}><X className="h-3 w-3" aria-hidden /></button>
                 </div>
-            ) : examples.length > 1 && (
+            ) : examples.length > 1 && focused && !text.trim() && (
                 <div className="qi-ask-examples" aria-label="Examples">
                     <span>Try:</span>
                     {examples.slice(0, 3).map(example => (
-                        <button key={example} type="button" onClick={() => { setText(example); ask(example); }}>{example}</button>
+                        // mousedown keeps the box focused, so the click lands before the examples hide
+                        <button key={example} type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setText(example); ask(example); }}>{example}</button>
                     ))}
                 </div>
             )}
