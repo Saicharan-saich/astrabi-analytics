@@ -188,8 +188,19 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
 
     // INJECT DATE FILTERS INTO SQL PREVIEW
     let finalSQL = generatedSQL || sql;
-    if (query.dateFilters && query.dateFilters.length > 0) {
-        const whereClauses = query.dateFilters.map((df: any) => {
+    // Only add a date filter the compiled SQL doesn't already contain; a
+    // second, made-up `col IN ('2025')` would make the answer check fail.
+    const missingDateFilters = (query.dateFilters || []).filter((df: any) => {
+        const sqlText = finalSQL || '';
+        const hasColumn = sqlText.includes(`"${df.column}"`);
+        const hasValues = (df.values || []).every((v: string) =>
+            String(v).includes('__')
+                ? String(v).split('__').every(part => !part || sqlText.includes(part))
+                : sqlText.includes(`'${v}'`));
+        return !(hasColumn && hasValues);
+    });
+    if (missingDateFilters.length > 0) {
+        const whereClauses = missingDateFilters.map((df: any) => {
             const valStr = df.values.map((v: string) => `'${v}'`).join(', ');
             return `${df.column} IN (${valStr})`;
         });

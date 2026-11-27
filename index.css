@@ -6102,6 +6102,7 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-ask-row:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(99 102 241 / .18); }
 .qi-ask-row input { flex: 1; min-width: 0; padding: 8px 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 14px; }
 .qi-ask-row input::placeholder { color: var(--text-tertiary); }
+.qi-ask-row input:focus, .qi-ask-row input:focus-visible { outline: none !important; box-shadow: none !important; border: 0 !important; }
 .qi-ask-go { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--color-primary); color: #fff; flex-shrink: 0; }
 .qi-ask-go:disabled { opacity: .35; }
 .qi-ask-go:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
