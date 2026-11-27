@@ -15,6 +15,12 @@ import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { FormatPanel } from './FormatPanel';
 import { QuestionBuilderVideoGuide } from './QuestionBuilderVideoGuide';
 import { AskInWords } from './AskInWords';
+import { QuestionShelf } from './QuestionShelf';
+import { useQuestionStore } from '../store/useQuestionStore';
+import { useSetupStore } from '../store/useSetupStore';
+import { useAuthStore } from '../store/useAuthStore';
+import { canUseCleaning } from '../utils/cleaningAccess';
+import { keepableConfig, newQuestionId } from '../utils/savedQuestions';
 import { exampleQuestions } from '../services/builderFromWords';
 import { describeBuilderFinding, describeBuilderQuestion } from '../utils/builderAnswer';
 import { BUILDER_SPLIT_DEFAULT, BUILDER_SPLIT_MIN, builderSplitMaximum, clampBuilderSplit } from '../utils/builderSplitter';
@@ -434,6 +440,17 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
             setResult(res);
             setLastRunConfig(nextRequestedConfig);
+            if (!isStartingPoint && !res.error && res.data?.length && nextRequestedConfig.metric) {
+                try {
+                    useQuestionStore.getState().addRecent({
+                        id: newQuestionId(),
+                        name: headlineQuestion(describeBuilderQuestion(nextRequestedConfig)),
+                        config: keepableConfig(nextRequestedConfig),
+                        createdAt: Date.now(),
+                        datasetName: dataset.name,
+                    });
+                } catch { /* the list is a convenience */ }
+            }
             const previousGrouping = JSON.stringify([lastRunConfig?.dimension, ...(lastRunConfig?.secondaryDimensions || [])]);
             const nextGrouping = JSON.stringify([config.dimension, ...(config.secondaryDimensions || [])]);
             if (previousGrouping !== nextGrouping) {
@@ -542,6 +559,14 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     };
 
     /** Questions to type, for this file (each one fully understood). */
+    const currentUser = useAuthStore(state => state.currentUser);
+    useEffect(() => { useQuestionStore.getState().ownedBy(currentUser?.id); }, [currentUser?.id]);
+    const setups = useSetupStore(state => state.setups);
+    const packSetup = useMemo(() => (dataset.cleaningSetup?.id ? setups.find(s => s.id === dataset.cleaningSetup!.id) : undefined), [setups, dataset.cleaningSetup?.id]);
+    const savePack = useCallback((questions: any[]) => {
+        if (!packSetup) return;
+        useSetupStore.getState().saveSetup({ ...packSetup, questions, updatedAt: Date.now() });
+    }, [packSetup]);
     const wordExamples = useMemo(() => { try { return exampleQuestions(dataset, asOfDate); } catch { return []; } }, [dataset, asOfDate]);
 
     /** Starting points for an empty builder, from the data's shape. */
@@ -772,6 +797,19 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 )}
                 {effectiveInitialConfig?._source !== 'ai-sql' && (
                     <AskInWords dataset={dataset} asOf={asOfDate} examples={wordExamples} onAsk={config => runStarter(config)} />
+                )}
+                {effectiveInitialConfig?._source !== 'ai-sql' && (
+                    <QuestionShelf
+                        dataset={dataset}
+                        asOf={asOfDate}
+                        current={result && !result.error && result.data?.length && lastRunConfig?.metric
+                            ? { config: lastRunConfig, name: headlineQuestion(describeBuilderQuestion(lastRunConfig)), chartType }
+                            : undefined}
+                        onRun={config => runStarter(config)}
+                        pack={packSetup}
+                        canEditPack={canUseCleaning(currentUser)}
+                        onSavePack={savePack}
+                    />
                 )}
                 <QuestionBuilder
                     key={`${editingItemId || effectiveInitialConfig?._handoffId || 'default'}:${builderResetVersion}`}

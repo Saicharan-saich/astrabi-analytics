@@ -57,6 +57,7 @@ export function buildSetup(dataset: Dataset, name: string, existing?: CleaningSe
         ...(existing?.notes ? { notes: existing.notes } : {}),
         timesUsed: existing?.timesUsed || 0,
         ...(existing?.lastUsedAt ? { lastUsedAt: existing.lastUsedAt } : {}),
+        ...(existing?.questions?.length ? { questions: existing.questions } : {}),
     };
 }
 

@@ -140,9 +140,25 @@ for (const theme of ['light', 'dark'] as const) {
                 { name: 'channel', type: 'DIMENSION' }, { name: 'quantity', type: 'METRIC' }, { name: 'revenue', type: 'METRIC' }, { name: 'discount', type: 'METRIC' },
             ],
             etlOptions: { blankDecisions: { discount: 'zero' } },
+            // The data team's question pack travels with the setup.
+            questions: [
+                { id: 'q_pack_region', name: 'Revenue by region', config: { metric: 'revenue', aggregation: 'SUM', dimension: 'region', timeFilter: 'all_time', sort: 'desc' }, createdAt: 1 },
+                { id: 'q_pack_store', name: 'Revenue by store', config: { metric: 'revenue', aggregation: 'SUM', dimension: 'store', timeFilter: 'all_time', sort: 'desc' }, createdAt: 1 },
+            ],
         };
         await boot(page, theme, 'DASHBOARD', { role: 'contributor', api: pathname => (pathname.endsWith('/cleaning-setups/shared') ? { setups: [shared] } : undefined) });
         const ready = await upload(page, 'acme_sales_april.csv', salesCsv(4), theme, '90-shared-setup-ready');
         await expect(ready).toContainText('Cleaned with your saved setup Acme · monthly sales');
+        await ready.getByRole('button', { name: 'Close' }).click();
+        // The pack is one click away in the Question Builder; a question this file can't answer says why.
+        await go(page, 'Question Builder');
+        await page.getByRole('button', { name: /Question pack · Acme · monthly sales/ }).click();
+        const pack = page.getByRole('region', { name: 'Question pack' });
+        await expect(pack).toContainText('Set up for this data by Priya (data team)');
+        await expect(pack).toContainText('“Revenue by store” needs store');
+        await expect(pack.getByRole('button', { name: /Remove/ })).toHaveCount(0);
+        await pack.getByRole('button', { name: 'Revenue by region' }).click();
+        await expect(page.locator('.qi-builder-headline-title')).toContainText(/revenue by region/i, { timeout: 20000 });
+        await shoot(page, `91-question-pack-${theme}`);
     });
 }

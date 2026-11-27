@@ -19,6 +19,8 @@ const MAX_SETUPS = 500;
 const MAX_SHARES = 200;
 const MAX_COLUMNS = 1000;
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const MAX_QUESTIONS = 50;
+const MAX_QUESTION_BYTES = 8 * 1024;
 const KINDS = new Set(['METRIC', 'DIMENSION', 'DATE', 'BOOLEAN', 'ID', 'UNKNOWN']);
 /** Fields that could carry a person's rows: never stored, at any depth. */
 const ROW_FIELDS = new Set(['rows', 'rawRows', 'sampleRows', 'removedRowSamples', 'stepBase', 'data', 'preTransformRows', 'relatedTables']);
@@ -41,6 +43,31 @@ function withoutRows(value, depth = 0) {
     if (typeof value === 'string') return value.slice(0, 2000);
     if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
     return null;
+}
+
+/**
+ * The setup's question pack: saved Question Builder questions that run on
+ * every new file cleaned with it. Each is a name and the builder's choices
+ * (columns, filter values, sort); never rows, and each is size-capped.
+ */
+function cleanQuestions(input) {
+    if (!Array.isArray(input)) return [];
+    const out = [];
+    for (const q of input.slice(0, MAX_QUESTIONS)) {
+        if (!q || typeof q !== 'object') continue;
+        const id = text(q.id, 80);
+        const name = text(q.name, 160).trim();
+        if (!ID_RE.test(id) || !name || !q.config || typeof q.config !== 'object' || Array.isArray(q.config)) continue;
+        const question = {
+            id, name,
+            config: withoutRows(q.config),
+            createdAt: number(q.createdAt) || Date.now(),
+            ...(typeof q.chartType === 'string' && /^[A-Za-z]{1,40}$/.test(q.chartType) ? { chartType: q.chartType } : {}),
+        };
+        if (Buffer.byteLength(JSON.stringify(question)) > MAX_QUESTION_BYTES) continue;
+        out.push(question);
+    }
+    return out;
 }
 
 /** The setup as it may be stored, or null when it is not a setup. */
@@ -71,6 +98,8 @@ function cleanSetup(input) {
         timesUsed: number(input.timesUsed),
         ...(number(input.lastUsedAt) ? { lastUsedAt: number(input.lastUsedAt) } : {}),
     };
+    const questions = cleanQuestions(input.questions);
+    if (questions.length) setup.questions = questions;
     if (Buffer.byteLength(JSON.stringify(setup)) > MAX_SETUP_BYTES) return null;
     return setup;
 }
@@ -222,4 +251,4 @@ function registerCleaningSetupRoutes(app, service, { requireAuthenticatedUser })
     });
 }
 
-module.exports = { createCleaningSetupService, registerCleaningSetupRoutes, cleanSetup, withoutRows };
+module.exports = { cleanQuestions, createCleaningSetupService, registerCleaningSetupRoutes, cleanSetup, withoutRows };

@@ -242,6 +242,20 @@ export interface CleaningSetup {
   lastUsedAt?: number;
   /** Received from an admin (read-only here): who shared it. */
   sharedBy?: string;
+  /** The question pack: builder questions to run on every file cleaned with this setup. */
+  questions?: SavedQuestion[];
+}
+
+/** A Question Builder question kept to run again: a name and the builder's choices, never rows. */
+export interface SavedQuestion {
+  id: string;
+  name: string;
+  /** The builder's choices. `_when` keeps a calendar period moving with the date ('last_month' | 'last_quarter'). */
+  config: Record<string, any>;
+  createdAt: number;
+  chartType?: string;
+  /** The data it was asked of, to show beside it. */
+  datasetName?: string;
 }
 
 /** One way a new file differs from the setup it was cleaned with. */

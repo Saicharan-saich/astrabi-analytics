@@ -42,7 +42,7 @@ describe('what an admin types', () => {
     });
     it('refuses bad names, overlapping folders and keys that are not keys', () => {
         expect(az.cleanPipeline({ ...ok, account: 'acme-data' }).error).toMatch(/storage account name/);
-        expect(az.cleanPipeline({ ...ok, container: 'Sales' === 'x' ? '' : 'a' }).error).toMatch(/container name/);
+        expect(az.cleanPipeline({ ...ok, container: 'a' }).error).toMatch(/container name/);
         expect(az.cleanPipeline({ ...ok, cleaned: 'incoming/cleaned' }).error).toMatch(/must be separate/);
         expect(az.cleanPipeline({ ...ok, incoming: '../x' }).error).toMatch(/Folders are paths/);
         expect(az.cleanPipeline({ ...ok, key: 'hunter2' }).error).toMatch(/access key/);

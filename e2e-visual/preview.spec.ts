@@ -172,6 +172,17 @@ for (const theme of ['light', 'dark'] as const) {
         // The builder's own controls and the answer follow.
         await expect(page.locator('.qi-builder-headline-title')).toContainText(/top 5 products by total profit/i, { timeout: 20000 });
         await shoot(page, `07-builder-ask-${theme}`);
+        // The figures are checked again from the cleaned rows, and agree.
+        await expect(page.getByText(/Check failed/)).toHaveCount(0);
+        // Keep it: saved questions and recent ones are one click away.
+        const shelf = page.getByRole('region', { name: 'Your questions' });
+        await shelf.getByRole('button', { name: 'Save this question' }).click();
+        await shelf.getByLabel('Question name').fill('Best sellers 2025');
+        await shelf.getByRole('button', { name: 'Save', exact: true }).click();
+        await expect(shelf.getByRole('region', { name: 'Saved questions' })).toContainText('Best sellers 2025');
+        await shoot(page, `07-builder-saved-${theme}`);
+        await shelf.getByRole('button', { name: /^Recent/ }).click();
+        await expect(shelf.getByRole('region', { name: 'Recent questions' })).toContainText(/top 5 products by total profit/i);
         // Words it cannot place are said, never guessed.
         await ask.getByLabel('Ask in your own words').fill('revenue by zebra');
         await ask.getByLabel('Ask in your own words').press('Enter');
