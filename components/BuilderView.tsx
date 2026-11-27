@@ -16,6 +16,12 @@ import { FormatPanel } from './FormatPanel';
 import { QuestionBuilderVideoGuide } from './QuestionBuilderVideoGuide';
 import { AskInWords } from './AskInWords';
 import { QuestionShelf } from './QuestionShelf';
+import { ChangeExplainer } from './ChangeExplainer';
+import { canExplainChange } from '../services/explainChange';
+import { nextQuestions } from '../utils/nextQuestions';
+import { answerWarnings } from '../utils/answerWarnings';
+import { AnswerWarnings } from './AnswerWarnings';
+import { TargetStrip } from './TargetStrip';
 import { useQuestionStore } from '../store/useQuestionStore';
 import { useSetupStore } from '../store/useSetupStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -350,6 +356,31 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (maxForCol && !isUserOverride) setAsOfDate(maxForCol);
     };
 
+    /** The engine's question for a builder config (also used to split an answer when explaining a change). */
+    const toQuery = (config: any): QueryConfig => ({
+        questionId: 'custom_builder',
+        metric: config.metric,
+        dimension: config.dimension,
+        aggregation: config.aggregation || AggregationType.SUM,
+        timeGrain: TimeGrain.RAW,
+        analysisType: AnalysisType.STANDARD,
+        timeFilter: config.timeFilter,
+        filters: config.filters,
+        measureFilters: config.measureFilters,
+        dateFilters: config.dateFilters,
+        limit: config.limit,
+        sort: config.sort,
+        chartType: chartType,
+        asOfDate: asOfDate,
+        comparison: ('comparison' in config) ? (config.comparison || '') : (result?.config?.comparison || ''),
+        comparisonMode: config.comparisonMode || result?.config?.comparisonMode,
+        comparisonGrain: ('comparisonGrain' in config) ? config.comparisonGrain : (result?.config?.comparisonGrain),
+        comparisonOffset: ('comparisonOffset' in config) ? config.comparisonOffset : (result?.config?.comparisonOffset),
+        ...(config.secondaryMetrics?.length > 0 ? { secondaryMetrics: config.secondaryMetrics, axisMode: config.axisMode || 'auto', secondaryMetricVisuals: config.secondaryMetricVisuals || {}, secondaryMetricAggregations: config.secondaryMetricAggregations || {} } : {}),
+        ...(config.secondaryDimensions?.length > 0 ? { secondaryDimensions: config.secondaryDimensions } : {}),
+        tableCalculations: (formatting?.tableCalculations || []).filter(c => c !== 'none'),
+    });
+
     const handleRun = async (config: any, options: { recordHistory?: boolean; startingPoint?: boolean } = {}) => {
         const nextRequestedConfig = JSON.parse(JSON.stringify(config));
         const previousRequestedConfig = requestedConfigRef.current;
@@ -371,29 +402,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             setIsLoading(true);
             setIsAIInsightOpen(false); // Reset AI insight on new question
 
-            const query: QueryConfig = {
-                questionId: 'custom_builder',
-                metric: config.metric,
-                dimension: config.dimension,
-                aggregation: config.aggregation || AggregationType.SUM,
-                timeGrain: TimeGrain.RAW,
-                analysisType: AnalysisType.STANDARD,
-                timeFilter: config.timeFilter,
-                filters: config.filters,
-                measureFilters: config.measureFilters,
-                dateFilters: config.dateFilters,
-                limit: config.limit,
-                sort: config.sort,
-                chartType: chartType,
-                asOfDate: asOfDate,
-                comparison: ('comparison' in config) ? (config.comparison || '') : (result?.config?.comparison || ''),
-                comparisonMode: config.comparisonMode || result?.config?.comparisonMode,
-                comparisonGrain: ('comparisonGrain' in config) ? config.comparisonGrain : (result?.config?.comparisonGrain),
-                comparisonOffset: ('comparisonOffset' in config) ? config.comparisonOffset : (result?.config?.comparisonOffset),
-                ...(config.secondaryMetrics?.length > 0 ? { secondaryMetrics: config.secondaryMetrics, axisMode: config.axisMode || 'auto', secondaryMetricVisuals: config.secondaryMetricVisuals || {}, secondaryMetricAggregations: config.secondaryMetricAggregations || {} } : {}),
-                ...(config.secondaryDimensions?.length > 0 ? { secondaryDimensions: config.secondaryDimensions } : {}),
-                tableCalculations: (formatting?.tableCalculations || []).filter(c => c !== 'none'),
-            };
+            const query: QueryConfig = toQuery(config);
 
             const res = await runAnalysis(dataset, query);
 
@@ -533,32 +542,15 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     };
 
     /** One-click breakdowns offered when the question has no grouping yet. */
+    /** Warnings before this answer misleads, each with a fix. */
+    const warningsNow = useMemo(() => {
+        try { return answerWarnings(dataset, lastRunConfig, result, asOfDate); } catch { return []; }
+    }, [result, lastRunConfig, dataset, asOfDate]);
+    /** Next questions from the shape of this answer (the leader, an unusual period, the year before…). */
     const quickStarts = useMemo(() => {
-        if (!result || !lastRunConfig || lastRunConfig.dimension || !lastRunConfig.metric) return [] as { value: string; label: string }[];
-        const sample = (dataset.rows || []).slice(0, 2000);
-        const options: { value: string; label: string }[] = [];
-        for (const column of dataset.columns) {
-            if (column.type !== ColumnType.DIMENSION) continue;
-            const distinct = new Set(sample.map(row => row[column.name]).filter(v => v !== null && v !== undefined && v !== ''));
-            if (distinct.size < 2 || distinct.size > 40) continue;
-            options.push({ value: column.name, label: `by ${column.name.replace(/_/g, ' ')}` });
-            if (options.length >= 3) break;
-        }
-        if (primaryDateColumn(dataset)) options.push({ value: 'month', label: 'over time' });
-        return options;
+        try { return nextQuestions(dataset, lastRunConfig, result); } catch { return []; }
     }, [result, lastRunConfig, dataset]);
 
-    const runQuickStart = (dimension: string) => {
-        if (!lastRunConfig) return;
-        const next = { ...lastRunConfig, dimension };
-        if (dimension === 'month') { next.sort = 'oldest'; delete next.limit; }
-        setUndoRestoreConfig(next);
-        setBuilderResetVersion(version => version + 1);
-        setContentTab('visual');
-        void handleRun(next);
-    };
-
-    /** Questions to type, for this file (each one fully understood). */
     const currentUser = useAuthStore(state => state.currentUser);
     useEffect(() => { useQuestionStore.getState().ownedBy(currentUser?.id); }, [currentUser?.id]);
     const setups = useSetupStore(state => state.setups);
@@ -567,6 +559,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (!packSetup) return;
         useSetupStore.getState().saveSetup({ ...packSetup, questions, updatedAt: Date.now() });
     }, [packSetup]);
+    /** Questions to type, for this file (each one fully understood). */
     const wordExamples = useMemo(() => { try { return exampleQuestions(dataset, asOfDate); } catch { return []; } }, [dataset, asOfDate]);
 
     /** Starting points for an empty builder, from the data's shape. */
@@ -1226,12 +1219,32 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                 <p className="qi-builder-headline-finding">{describeBuilderFinding(result, formatting)}</p>
                             )}
                             <AnswerCheckStrip check={answerCheck} />
+                            <AnswerWarnings warnings={warningsNow} onFix={config => runStarter(config)} />
+                            {lastRunConfig?.dimension && lastRunConfig?.metric && !result.error && result.data?.length > 0 && !['pie', 'doughnut', 'kpiCard', 'gauge', 'treemap', 'map', 'table', 'scatter'].includes(String(chartType)) && !(lastRunConfig.comparison && lastRunConfig.comparison !== 'none') && (
+                                <TargetStrip
+                                    dataset={dataset}
+                                    config={lastRunConfig}
+                                    result={result}
+                                    target={formatting?.target}
+                                    onSetTarget={target => onUpdateFormatting?.({ ...(formatting || {}), target } as any)}
+                                    onCompareBudget={column => runStarter({ ...lastRunConfig, secondaryMetrics: [...(lastRunConfig.secondaryMetrics || []), column], secondaryMetricVisuals: { ...(lastRunConfig.secondaryMetricVisuals || {}), [column]: 'line' } })}
+                                />
+                            )}
+                            {lastRunConfig && !(formatting?.tableCalculations || []).some(c => c !== 'none') && canExplainChange(lastRunConfig, result) && (
+                                <ChangeExplainer
+                                    dataset={dataset}
+                                    config={lastRunConfig}
+                                    result={result}
+                                    run={config => runAnalysis(dataset, { ...toQuery({ ...config, comparison: '' }), tableCalculations: [] })}
+                                    onShowSplit={grouping => runStarter({ ...lastRunConfig, secondaryDimensions: [grouping], limit: 0 })}
+                                />
+                            )}
                             {quickStarts.length > 0 && (
-                                <div className="qi-builder-quickstarts" role="group" aria-label="Try a breakdown">
+                                <div className="qi-builder-quickstarts" role="group" aria-label="Ask next">
                                     <Sparkles className="w-3.5 h-3.5" aria-hidden />
-                                    <span>Try</span>
+                                    <span>Next</span>
                                     {quickStarts.map(option => (
-                                        <button key={option.value} type="button" className="qi-quickstart" onClick={() => runQuickStart(option.value)}>{option.label}</button>
+                                        <button key={option.label} type="button" className="qi-quickstart" title={option.why} onClick={() => runStarter(option.config)}>{option.label}</button>
                                     ))}
                                 </div>
                             )}

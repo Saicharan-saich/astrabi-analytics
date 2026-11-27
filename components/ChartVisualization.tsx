@@ -60,6 +60,8 @@ ChartJS.register(
 // Charts use the same typeface as the rest of the UI (Inter, see index.css)
 // so axis ticks, legends and tooltips read as part of the interface.
 const CHART_FONT_FAMILY = "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif";
+/** Charts a target or budget line can be drawn across. */
+const TARGET_CHARTS = new Set(['bar', 'horizontalBar', 'line', 'area', 'steppedLine', 'curvedLine', 'lollipop', 'combo', 'groupedBar', 'stackedBar', 'column']);
 ChartJS.defaults.font.family = CHART_FONT_FAMILY;
 
 import { Dataset, ColumnType, AggregationType, QueryConfig, AnalysisResult, TimeGrain, AnalysisType, ChartConfig, FormattingConfig } from '../types';
@@ -82,7 +84,8 @@ import { suggestCharts } from '../utils/chartSuggestions';
 import { percentScaleOf, percentScalesByKey, scaleForName, toPercentPoints } from '../utils/percentScale';
 import type { ChartPointSelection } from '../utils/explore';
 import { useAppStore } from '../store/useAppStore';
-import { doughnutCenterPlugin, stackTotalsPlugin } from './charts/cleanChartPlugins';
+import { doughnutCenterPlugin, stackTotalsPlugin, targetLinePlugin } from './charts/cleanChartPlugins';
+import { targetFor } from '../utils/targets';
 import { arcLegendMode, RATE_NAME } from '../utils/answerGuard';
 
 interface ChartVisualizationProps {
@@ -2292,7 +2295,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
     }), []); // Empty deps — uses ref internally for latest data
 
-    const plugins = useMemo(() => [dataLabelsPlugin, growthLabelsPlugin, doughnutCenterPlugin, stackTotalsPlugin], [dataLabelsPlugin, growthLabelsPlugin]);
+    const plugins = useMemo(() => [dataLabelsPlugin, growthLabelsPlugin, doughnutCenterPlugin, stackTotalsPlugin, targetLinePlugin], [dataLabelsPlugin, growthLabelsPlugin]);
 
     // The value as stored in the result row for a label shown on the axis.
     const rawValueForLabel = (label: string, index: number): string => {
@@ -2387,11 +2390,25 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     }), [handleClick, handleHover, isDark, yKey]);
 
     // Merge onClick into the main options for non-treemap charts
-    const chartOptions = useMemo(() => ({
-        ...options,
-        onClick: handleClick,
-        ...(handleHover ? { onHover: handleHover } : {}),
-    }), [options, handleClick, handleHover]);
+    // A target or budget line for this measure (Question Builder → Add a target).
+    const chartTarget = targetFor(formatting?.target, config as any);
+    const targetChart = Boolean(chartTarget) && TARGET_CHARTS.has(String(chartType));
+    const chartOptions = useMemo(() => {
+        const base: any = { ...options, onClick: handleClick, ...(handleHover ? { onHover: handleHover } : {}) };
+        if (!targetChart || !chartTarget) return base;
+        const horizontal = chartType === 'horizontalBar' || (options as any)?.indexAxis === 'y';
+        const axis = horizontal ? 'x' : 'y';
+        const scale = (options as any)?.scales?.[axis] || {};
+        const reach = chartTarget.value * 1.08;
+        return {
+            ...base,
+            scales: { ...(options as any)?.scales, [axis]: { ...scale, ...(scale.max === undefined ? { suggestedMax: Math.max(Number(scale.suggestedMax) || -Infinity, reach) } : {}) } },
+            plugins: {
+                ...(options as any)?.plugins,
+                qiTarget: { display: true, value: chartTarget.value, text: `${chartTarget.label} ${formatCompactLabel(chartTarget.value)}`, color: isDark ? '#fbbf24' : '#b45309', fontFamily: CHART_FONT_FAMILY, horizontal },
+            },
+        };
+    }, [options, handleClick, handleHover, targetChart, chartTarget?.value, chartTarget?.label, chartType, isDark]);
 
     // ── EARLY RETURN — must be AFTER all hooks to avoid "fewer hooks" crash ──
     if (!data || data.length === 0 || !chartData) {

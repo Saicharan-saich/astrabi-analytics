@@ -189,6 +189,71 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(read).toContainText('Not used: “zebra”');
     });
 
+    test(`builder: why did it change ${theme}`, async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 950 });
+        await boot(page, theme, 'DASHBOARD');
+        let nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        if (!(await nav.isVisible().catch(() => false))) {
+            await page.getByRole('button', { name: 'Open navigation', exact: true }).click().catch(() => {});
+            nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        }
+        await nav.click();
+        const ask = page.getByRole('region', { name: 'Ask in your own words' });
+        await ask.getByLabel('Ask in your own words').fill('revenue by month');
+        await ask.getByLabel('Ask in your own words').press('Enter');
+        await expect(page.locator('.qi-builder-headline-title')).toContainText(/revenue by month/i, { timeout: 20000 });
+        const why = page.getByRole('region', { name: 'Why did it change' });
+        await why.getByRole('button', { name: 'Why did it change?' }).click();
+        const panel = why.getByRole('status');
+        await expect(panel).toContainText(/explains it best|Nothing stands out/, { timeout: 20000 });
+        await shoot(page, `07-builder-why-${theme}`);
+        if (await panel.getByRole('button', { name: /See it over time by/ }).count()) {
+            await panel.getByRole('button', { name: /See it over time by/ }).click();
+            await expect(page.locator('.qi-builder-headline-title')).toContainText(/revenue by month/i, { timeout: 20000 });
+        }
+    });
+
+    test(`builder: warnings, next questions and a target ${theme}`, async ({ page }) => {
+        test.setTimeout(150_000);
+        await page.setViewportSize({ width: 1440, height: 950 });
+        await boot(page, theme, 'DASHBOARD');
+        let nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        if (!(await nav.isVisible().catch(() => false))) {
+            await page.getByRole('button', { name: 'Open navigation', exact: true }).click().catch(() => {});
+            nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        }
+        await nav.click();
+        const ask = page.getByRole('region', { name: 'Ask in your own words' });
+        await ask.getByLabel('Ask in your own words').fill('top 3 products by revenue');
+        await ask.getByLabel('Ask in your own words').press('Enter');
+        const headline = page.locator('.qi-builder-headline-title');
+        await expect(headline).toContainText(/top 3 products by total revenue/i, { timeout: 20000 });
+        // A top 3 that is a small part of the total says so, and the fix is one click.
+        const warnings = page.getByRole('list', { name: 'Before you rely on this' });
+        await expect(warnings).toContainText(/These 3 are only \d+% of the total; the other 8 product values make up the rest\./);
+        // Next questions follow the answer: the leader, broken down.
+        const next = page.getByRole('group', { name: 'Ask next' });
+        await expect(next.getByRole('button').first()).toBeVisible();
+        await shoot(page, `07-builder-warn-${theme}`);
+        await warnings.getByRole('button', { name: 'Show all 11' }).click();
+        await expect(headline).not.toContainText(/top 3/i, { timeout: 20000 });
+        await expect(page.getByRole('list', { name: 'Before you rely on this' })).toHaveCount(0);
+        // A target drawn across the chart, and how each bar stands against it.
+        const targets = page.getByRole('region', { name: 'Targets and budgets' });
+        await targets.getByRole('button', { name: 'Add a target' }).click();
+        await targets.getByLabel('Target value').fill('25000');
+        await targets.getByRole('button', { name: 'Draw it' }).click();
+        await expect(targets.getByRole('status')).toContainText(/Target 25k: \d+ of 11 at or above the target/);
+        await shoot(page, `07-builder-target-${theme}`);
+        // The leader's next question runs.
+        const first = page.getByRole('group', { name: 'Ask next' }).getByRole('button').first();
+        const label = (await first.textContent()) || '';
+        await first.click();
+        await expect(headline).not.toHaveText(/products by total revenue$/i, { timeout: 20000 });
+        expect(label.length).toBeGreaterThan(3);
+    });
+
     test(`formatting ${theme}`, async ({ page }) => {
         await boot(page, theme, 'DASHBOARD');
         let nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();

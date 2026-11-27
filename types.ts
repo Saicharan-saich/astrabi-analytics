@@ -595,6 +595,8 @@ export type FormattingConfig = {
   showAxisTitles?: boolean;
   /** KPI cards: optional target; renders a progress bar towards it. */
   kpiGoal?: number;
+  /** A target or budget line on charts of one measure (Question Builder → Add a target). */
+  target?: { value: number; label: string; metric: string };
   /** Internal: marks that stored formatting has had the one-off legibility upgrade applied. */
   _legibilityUpgraded?: boolean;
 };

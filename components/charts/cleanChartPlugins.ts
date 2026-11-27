@@ -120,3 +120,62 @@ export const stackTotalsPlugin = {
         ctx.restore();
     },
 };
+
+export interface TargetLineOptions {
+    display?: boolean;
+    value?: number;
+    /** e.g. "Target 50k". */
+    text?: string;
+    color?: string;
+    fontFamily?: string;
+    /** Bars run left to right: the line is vertical. */
+    horizontal?: boolean;
+}
+
+/**
+ * qiTarget: a dashed target or budget line across the plot, labelled at its
+ * end. Drawn after the datasets so it sits on top of bars.
+ */
+export const targetLinePlugin = {
+    id: 'qiTarget',
+    afterDatasetsDraw(chart: any, _args: unknown, options: TargetLineOptions) {
+        if (!options?.display || !Number.isFinite(options.value)) return;
+        const scale = chart.scales?.[options.horizontal ? 'x' : 'y'];
+        const area = chart.chartArea;
+        if (!scale || !area) return;
+        const at = scale.getPixelForValue(options.value);
+        if (!Number.isFinite(at)) return;
+        const { ctx } = chart;
+        const color = options.color || '#b45309';
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        if (options.horizontal) {
+            if (at < area.left - 1 || at > area.right + 1) { ctx.restore(); return; }
+            ctx.moveTo(at, area.top);
+            ctx.lineTo(at, area.bottom);
+        } else {
+            if (at < area.top - 1 || at > area.bottom + 1) { ctx.restore(); return; }
+            ctx.moveTo(area.left, at);
+            ctx.lineTo(area.right, at);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (options.text) {
+            ctx.font = `600 11px ${options.fontFamily || 'Inter, system-ui, sans-serif'}`;
+            const w = ctx.measureText(options.text).width;
+            const pad = 4;
+            const x = options.horizontal ? Math.min(at + 4, area.right - w - pad * 2) : area.right - w - pad * 2;
+            const y = options.horizontal ? area.top + 2 : Math.max(area.top, at - 18);
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.12;
+            ctx.fillRect(x, y, w + pad * 2, 16);
+            ctx.globalAlpha = 1;
+            ctx.textBaseline = 'middle';
+            ctx.fillText(options.text, x + pad, y + 8);
+        }
+        ctx.restore();
+    },
+};
