@@ -3,6 +3,11 @@ import * as XLSX from 'xlsx';
 
 import { boot, shoot } from './boot';
 
+// A full-page shot of whatever was on screen when a test failed.
+test.afterEach(async ({ page }, info) => {
+    if (info.status !== info.expectedStatus) await shoot(page, `zz-failed-guided-${info.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`).catch(() => {});
+});
+
 /**
  * A first-time owner's path: a store with no direct connection explains how
  * to export the orders; a workbook with one table split across monthly
