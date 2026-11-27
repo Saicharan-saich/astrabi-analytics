@@ -207,6 +207,9 @@ for (const theme of ['light', 'dark'] as const) {
         await why.getByRole('button', { name: 'Why did it change?' }).click();
         const panel = why.getByRole('status');
         await expect(panel).toContainText(/explains it best|Nothing stands out/, { timeout: 20000 });
+        // It stays open when the builder's controls settle and re-run the same question.
+        await page.waitForTimeout(1500);
+        await expect(panel).toContainText(/explains it best|Nothing stands out/);
         await shoot(page, `07-builder-why-${theme}`);
         if (await panel.getByRole('button', { name: /See it over time by/ }).count()) {
             await panel.getByRole('button', { name: /See it over time by/ }).click();

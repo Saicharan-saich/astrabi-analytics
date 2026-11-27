@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { HelpCircle, Loader2, X } from 'lucide-react';
 import type { AnalysisResult, Dataset } from '../types';
-import { questionKey } from '../utils/savedQuestions';
 import { explainChange, periodLabel, periodsOf, shortNumber, type ChangeExplanation, type ExplainRun } from '../services/explainChange';
 
 /**
@@ -23,7 +22,7 @@ export const ChangeExplainer: React.FC<{
     const [state, setState] = useState<'idle' | 'working' | 'done'>('idle');
     const [answer, setAnswer] = useState<ChangeExplanation | null>(null);
     // A different question starts closed again (the same question re-run keeps it open).
-    const questionSignature = useMemo(() => `${questionKey(config)}|${periods.map(p => `${p.key}:${p.value}`).join(',')}`, [config, periods]);
+    const questionSignature = useMemo(() => `${config.metric}|${config.aggregation}|${periods.map(p => `${p.key}:${p.value}`).join(',')}`, [config.metric, config.aggregation, periods]);
     useEffect(() => { setState('idle'); setAnswer(null); setToKey(periods[periods.length - 1]?.key || ''); }, [questionSignature]);
 
     const go = async (key = toKey) => {
