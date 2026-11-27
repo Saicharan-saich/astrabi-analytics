@@ -168,7 +168,8 @@ export const targetLinePlugin = {
             const w = ctx.measureText(options.text).width;
             const pad = 4;
             const x = options.horizontal ? Math.min(at + 4, area.right - w - pad * 2) : area.right - w - pad * 2;
-            const y = options.horizontal ? area.top + 2 : Math.max(area.top, at - 18);
+            // Vertical line: label just above the plot when there's room, so it never covers a bar.
+            const y = options.horizontal ? (area.top >= 18 ? area.top - 17 : area.top + 2) : Math.max(area.top, at - 18);
             ctx.fillStyle = color;
             ctx.globalAlpha = 0.12;
             ctx.fillRect(x, y, w + pad * 2, 16);

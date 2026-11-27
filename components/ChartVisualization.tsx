@@ -2400,8 +2400,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const axis = horizontal ? 'x' : 'y';
         const scale = (options as any)?.scales?.[axis] || {};
         const reach = chartTarget.value * 1.08;
+        const padding = (options as any)?.layout?.padding;
+        const top = typeof padding === 'number' ? padding : Number(padding?.top) || 0;
         return {
             ...base,
+            // Room above the plot for the label of a vertical target line.
+            ...(horizontal ? { layout: { ...(options as any)?.layout, padding: { ...(typeof padding === 'object' ? padding : typeof padding === 'number' ? { left: padding, right: padding, bottom: padding } : {}), top: Math.max(top, 20) } } } : {}),
             scales: { ...(options as any)?.scales, [axis]: { ...scale, ...(scale.max === undefined ? { suggestedMax: Math.max(Number(scale.suggestedMax) || -Infinity, reach) } : {}) } },
             plugins: {
                 ...(options as any)?.plugins,

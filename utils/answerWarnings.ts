@@ -114,7 +114,7 @@ export function answerWarnings(dataset: Dataset, config: Record<string, any> | n
         }
         const shown = result.data.reduce((s, r) => s + (Number(r[result.yKey]) || 0), 0);
         const others = groups.size - result.data.length;
-        if (total > 0 && others > 0 && shown / total < 0.5) {
+        if (total > 0 && others > 0 && shown / total < 0.4) {
             out.push({
                 id: 'top_hides_total',
                 text: `These ${result.data.length} are only ${Math.round((shown / total) * 100)}% of the total; the other ${others} ${words(dim)} values make up the rest.`,

@@ -64,7 +64,7 @@ export const TargetStrip: React.FC<{
                     {mine && againstTarget ? (
                         <span className="qi-target-read" role="status">
                             <Flag className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                            <strong>{mine.label} {shortNumber(mine.value)}</strong>: {summary(againstTarget, `the ${mine.label.toLowerCase()}`)}
+                            <span><strong>{mine.label} {shortNumber(mine.value)}:</strong> {summary(againstTarget, `the ${mine.label.toLowerCase()}`)}</span>
                             <button type="button" className="qi-target-link" onClick={open}>Change</button>
                             <button type="button" className="qi-target-x" aria-label={`Remove the ${mine.label.toLowerCase()}`} onClick={() => onSetTarget(undefined)}><X className="h-3 w-3" aria-hidden /></button>
                         </span>

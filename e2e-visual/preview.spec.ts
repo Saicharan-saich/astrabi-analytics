@@ -179,7 +179,7 @@ for (const theme of ['light', 'dark'] as const) {
         await shelf.getByRole('button', { name: 'Save this question' }).click();
         await shelf.getByLabel('Question name').fill('Best sellers 2025');
         await shelf.getByRole('button', { name: 'Save', exact: true }).click();
-        await expect(shelf.getByRole('region', { name: 'Saved questions' })).toContainText('Best sellers 2025');
+        await expect(shelf.getByRole('region', { name: 'My questions' })).toContainText('Best sellers 2025');
         await shoot(page, `07-builder-saved-${theme}`);
         await shelf.getByRole('button', { name: /^Recent/ }).click();
         await expect(shelf.getByRole('region', { name: 'Recent questions' })).toContainText(/top 5 products by total profit/i);

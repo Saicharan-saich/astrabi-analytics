@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { BookOpen, Clock, ListChecks, Save, Trash2, X } from 'lucide-react';
+import { BookOpen, CheckCircle2, Clock, ListChecks, Save, Trash2, X } from 'lucide-react';
 import type { CleaningSetup, Dataset, SavedQuestion } from '../types';
 import { useQuestionStore } from '../store/useQuestionStore';
 import {
@@ -73,7 +73,7 @@ export const QuestionShelf: React.FC<{
             setNote(`Saved, and added to the question pack for ${pack.name}. It's one click away on every file cleaned with that setup.`);
             setOpen('pack');
         } else {
-            setNote('Saved. Find it under Saved questions.');
+            setNote('Saved. Find it under My questions.');
             setOpen('saved');
         }
         setSaving(false);
@@ -100,11 +100,11 @@ export const QuestionShelf: React.FC<{
             <div className="qi-shelf-bar">
                 {current && (
                     <button type="button" className="qi-shelf-save-btn" onClick={startSaving} disabled={saving} title={isSaved ? 'Already saved; save again to rename it' : 'Keep this question to run again'}>
-                        <Save className="h-3.5 w-3.5" aria-hidden />{isSaved ? 'Saved' : 'Save this question'}
+                        {isSaved ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> : <Save className="h-3.5 w-3.5" aria-hidden />}{isSaved ? 'Saved' : 'Save this question'}
                     </button>
                 )}
                 {(pack?.questions?.length || editablePack) ? tab('pack', `Question pack · ${pack!.name}`, <ListChecks className="h-3.5 w-3.5" aria-hidden />, pack!.questions?.length || 0) : null}
-                {saved.length > 0 && tab('saved', 'Saved', <BookOpen className="h-3.5 w-3.5" aria-hidden />, saved.length)}
+                {saved.length > 0 && tab('saved', 'My questions', <BookOpen className="h-3.5 w-3.5" aria-hidden />, saved.length)}
                 {recent.length > 0 && tab('recent', 'Recent', <Clock className="h-3.5 w-3.5" aria-hidden />, recent.length)}
             </div>
 
@@ -137,7 +137,7 @@ export const QuestionShelf: React.FC<{
             )}
 
             {open && (
-                <div className="qi-shelf-panel" role="region" aria-label={open === 'pack' ? 'Question pack' : open === 'saved' ? 'Saved questions' : 'Recent questions'}>
+                <div className="qi-shelf-panel" role="region" aria-label={open === 'pack' ? 'Question pack' : open === 'saved' ? 'My questions' : 'Recent questions'}>
                     {open === 'pack' && pack && (
                         <p className="qi-shelf-hint">
                             {pack.sharedBy ? `Set up for this data by ${pack.sharedBy}. ` : ''}
