@@ -150,6 +150,34 @@ for (const theme of ['light', 'dark'] as const) {
         }
     });
 
+    test(`builder: ask in your own words ${theme}`, async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 950 });
+        await boot(page, theme, 'DASHBOARD');
+        let nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        if (!(await nav.isVisible().catch(() => false))) {
+            await page.getByRole('button', { name: 'Open navigation', exact: true }).click().catch(() => {});
+            nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        }
+        await nav.click();
+        const ask = page.getByRole('region', { name: 'Ask in your own words' });
+        await expect(ask.getByLabel('Examples')).toBeVisible();
+        await ask.getByLabel('Ask in your own words').fill('top 5 products by profit in 2025');
+        await ask.getByLabel('Ask in your own words').press('Enter');
+        const read = ask.getByRole('status');
+        await expect(read).toContainText('total profit');
+        await expect(read).toContainText('by product');
+        await expect(read).toContainText('top 5');
+        await expect(read).toContainText('2025');
+        // The builder's own controls and the answer follow.
+        await expect(page.locator('.qi-builder-headline-title')).toContainText(/top 5 products by total profit/i, { timeout: 20000 });
+        await shoot(page, `07-builder-ask-${theme}`);
+        // Words it cannot place are said, never guessed.
+        await ask.getByLabel('Ask in your own words').fill('revenue by zebra');
+        await ask.getByLabel('Ask in your own words').press('Enter');
+        await expect(read).toContainText('Not used: “zebra”');
+    });
+
     test(`formatting ${theme}`, async ({ page }) => {
         await boot(page, theme, 'DASHBOARD');
         let nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();

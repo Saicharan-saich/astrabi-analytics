@@ -14,6 +14,8 @@ import { Tooltip } from './Tooltip';
 import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { FormatPanel } from './FormatPanel';
 import { QuestionBuilderVideoGuide } from './QuestionBuilderVideoGuide';
+import { AskInWords } from './AskInWords';
+import { exampleQuestions } from '../services/builderFromWords';
 import { describeBuilderFinding, describeBuilderQuestion } from '../utils/builderAnswer';
 import { BUILDER_SPLIT_DEFAULT, BUILDER_SPLIT_MIN, builderSplitMaximum, clampBuilderSplit } from '../utils/builderSplitter';
 import { chartShapeSignature, suggestCharts } from '../utils/chartSuggestions';
@@ -539,6 +541,9 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         void handleRun(next);
     };
 
+    /** Questions to type, for this file (each one fully understood). */
+    const wordExamples = useMemo(() => { try { return exampleQuestions(dataset, asOfDate); } catch { return []; } }, [dataset, asOfDate]);
+
     /** Starting points for an empty builder, from the data's shape. */
     const starters = useMemo(() => {
         try { return builderStarters(dataset); } catch { return []; }
@@ -764,6 +769,9 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             <X className="h-4 w-4" />
                         </button>
                     </div>
+                )}
+                {effectiveInitialConfig?._source !== 'ai-sql' && (
+                    <AskInWords dataset={dataset} asOf={asOfDate} examples={wordExamples} onAsk={config => runStarter(config)} />
                 )}
                 <QuestionBuilder
                     key={`${editingItemId || effectiveInitialConfig?._handoffId || 'default'}:${builderResetVersion}`}

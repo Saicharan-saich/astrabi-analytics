@@ -6095,3 +6095,24 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-rows { display: flex; flex-direction: column; }
 .qi-rows > .qi-rows-table { flex: 1 1 auto; min-height: 0; }
 .qi-rows > header, .qi-rows > p, .qi-rows > footer { flex-shrink: 0; }
+
+/* ── Ask in your own words (Question Builder) ── */
+.qi-ask { display: grid; gap: 8px; margin-bottom: 12px; }
+.qi-ask-row { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border-radius: 12px; border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-secondary); transition: border-color .15s, box-shadow .15s; }
+.qi-ask-row:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(99 102 241 / .18); }
+.qi-ask-row input { flex: 1; min-width: 0; padding: 8px 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 14px; }
+.qi-ask-row input::placeholder { color: var(--text-tertiary); }
+.qi-ask-go { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--color-primary); color: #fff; flex-shrink: 0; }
+.qi-ask-go:disabled { opacity: .35; }
+.qi-ask-go:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.qi-ask-read, .qi-ask-examples { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.qi-ask-label { font-weight: 600; }
+.qi-ask-chip { display: inline-flex; align-items: baseline; gap: 4px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-primary); font-weight: 600; }
+.qi-ask-chip em { font-style: normal; font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-tertiary); }
+.qi-ask-chip.is-filter { border-color: rgb(245 158 11 / .45); }
+.qi-ask-chip.is-time { border-color: rgb(14 165 233 / .45); }
+.qi-ask-unused { flex-basis: 100%; color: var(--color-warning, #b45309); }
+.qi-ask-close { margin-left: auto; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: var(--text-tertiary); }
+.qi-ask-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.qi-ask-examples button { padding: 3px 9px; border-radius: 999px; border: 1px dashed var(--border-default); color: var(--text-secondary); }
+.qi-ask-examples button:hover { border-style: solid; border-color: var(--color-primary); color: var(--text-primary); }
