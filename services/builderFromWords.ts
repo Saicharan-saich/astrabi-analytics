@@ -18,7 +18,7 @@ import { describeDatasetShape } from './datasetShape';
 import { mainAmountAndGroups } from './ai-sql/starterQuestions';
 
 type Row = Record<string, any>;
-export type UnderstoodSlot = 'measure' | 'split' | 'time' | 'filter' | 'top' | 'compare';
+export type UnderstoodSlot = 'measure' | 'split' | 'time' | 'filter' | 'top' | 'compare' | 'calc';
 export interface Understood { slot: UnderstoodSlot; text: string }
 export interface WordsQuestion {
     config: Record<string, unknown>;
@@ -113,7 +113,24 @@ export function questionFromWords(dataset: Dataset, text: string, asOf?: string)
     const pad = (n: number) => String(n).padStart(2, '0');
 
     // ── comparisons ──
-    if (take(/\b(?:vs|versus|v|compared? (?:to|with)|against)\.? (?:the )?(?:same (?:period|time|month|quarter|week) )?(?:last|previous|prior) year\b|\b(?:year on year|year over year|yoy|same period last year)\b/)) {
+    // "compare this and last month", "this month vs last month", "this week against the previous one":
+    // the period so far, next to the same days of the period before, shown over time.
+    let compareGrain = '';
+    let mm: RegExpExecArray | null;
+    if ((mm = take(/\b(?:compare |comparing |comparison of )?(?:this|current) (week|month|quarter|year)(?:'?s)? (?:and|vs|versus|v|with|to|against|compared (?:to|with)) (?:the )?(?:last|previous|prior|preceding)(?: (?:one|week|month|quarter|year))?\b/))
+        || (mm = take(/\b(?:compare |comparing |comparison of )?(?:this|current) (?:and|vs|versus|with) (?:the )?(?:last|previous|prior) (week|month|quarter|year)\b/))
+        || (mm = take(/\b(?:compare |comparing )?(?:last|previous|prior) (week|month|quarter|year) (?:and|vs|versus|with|to|against) (?:this|the current)(?: (?:one|week|month|quarter|year))?\b/))) {
+        const g = mm[1];
+        if (g === 'year') {
+            Object.assign(config, { timeFilter: 'this_year', comparison: 'same_period_last_n', comparisonGrain: 'year', comparisonOffset: 1 });
+            understood.push({ slot: 'time', text: 'this year so far' }, { slot: 'compare', text: 'next to the same months last year' });
+        } else {
+            Object.assign(config, { timeFilter: `this_${g}`, comparison: 'previous_period', comparisonGrain: g });
+            understood.push({ slot: 'time', text: `this ${g} so far` }, { slot: 'compare', text: `next to the same days last ${g}` });
+        }
+        compareGrain = g === 'week' || g === 'month' ? 'day' : 'month';
+        take(/\b(?:compare|comparing|comparison)\b/);
+    } else if (take(/\b(?:vs|versus|v|compared? (?:to|with)|against)\.? (?:the )?(?:same (?:period|time|month|quarter|week) )?(?:last|previous|prior) year\b|\b(?:year on year|year over year|yoy|same period last year)\b/)) {
         Object.assign(config, { comparison: 'same_period_last_n', comparisonGrain: 'year', comparisonOffset: 1 });
         understood.push({ slot: 'compare', text: 'compared with the same period a year earlier' });
     } else if (take(/\b(?:vs|versus|v|compared? (?:to|with)|against)\.? (?:the )?(?:last|previous|prior|preceding) (?:period|month|week|quarter|day|one)\b|\b(?:vs|versus) (?:before|previous)\b|\b(?:period on period|month on month|week on week|mom|wow)\b/)) {
@@ -325,6 +342,12 @@ export function questionFromWords(dataset: Dataset, text: string, asOf?: string)
         config.dimension = splitNames[0];
         if (splitNames.length > 1) config.secondaryDimensions = splitNames.slice(1);
         understood.splice(1, 0, { slot: 'split', text: `by ${splitNames.map(spokenName).join(' and ')}` });
+    }
+    if (compareGrain && !config.dimension && dateCol) {
+        // Two lines (this period and the one before) read better than two totals.
+        config.dimension = compareGrain;
+        grain = compareGrain;
+        understood.splice(1, 0, { slot: 'split', text: `by ${compareGrain}` });
     }
     if (config.comparison && !config.dimension && dateCol && !config.timeFilter && !dateFilters.length) {
         // "sales vs last month" with no period: compare this month with the one before.

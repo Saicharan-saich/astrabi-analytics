@@ -191,6 +191,43 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(read).toContainText('Not used: “zebra”');
     });
 
+    test(`builder: the AI sets up a comparison ${theme}`, async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 950 });
+        let sent = '';
+        await boot(page, theme, 'DASHBOARD', {
+            api: (pathname, _method, body) => {
+                if (!pathname.endsWith('/llm/chat')) return undefined;
+                sent = body || '';
+                return { model: 'anthropic/claude', choices: [{ message: { content: JSON.stringify({
+                    metric: 'revenue', aggregation: 'SUM', dimension: 'day', timeFilter: 'this_month', comparison: 'previous_period', comparisonGrain: 'month', sort: 'oldest',
+                    reading: 'This month so far next to the same days last month.',
+                }) } }] };
+            },
+        });
+        let nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        if (!(await nav.isVisible().catch(() => false))) {
+            await page.getByRole('button', { name: 'Open navigation', exact: true }).click().catch(() => {});
+            nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        }
+        await nav.click();
+        const ask = page.getByRole('region', { name: 'Ask in your own words' });
+        await ask.getByLabel('Ask in your own words').fill('compare this and last month sales');
+        await ask.getByLabel('Ask in your own words').press('Enter');
+        const read = ask.getByRole('status');
+        await expect(read).toContainText('Set up:', { timeout: 20000 });
+        await expect(read).toContainText('total revenue');
+        await expect(read).toContainText('by day');
+        await expect(read).toContainText('this month so far');
+        await expect(read).toContainText('next to the month before');
+        // The AI saw the question and column names, never the rows.
+        expect(sent).toContain('compare this and last month sales');
+        expect(sent).not.toContain('ORD-10');
+        // Both months on one chart, and the change in words.
+        await expect(page.locator('.qi-builder-headline-finding')).toContainText(/In total: [\d,.]+ against [\d,.]+ in the same days of the month before \([+−]\d/, { timeout: 20000 });
+        await shoot(page, `07-builder-ai-compare-${theme}`);
+    });
+
     test(`builder: why did it change ${theme}`, async ({ page }) => {
         test.setTimeout(120_000);
         await page.setViewportSize({ width: 1440, height: 950 });

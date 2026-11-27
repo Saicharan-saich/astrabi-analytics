@@ -110,8 +110,33 @@ export function describeBuilderQuestion(config: BuilderQuestionDescription): str
 }
 
 /** Adds a factual finding only when it can be read unambiguously from the result. */
+/** For an answer with a comparison: the two totals and the change, in one sentence. */
+export function describeComparison(result: AnalysisResult | undefined): string | null {
+    const config: any = result?.config;
+    if (!result || result.error || !config?.comparison || config.comparison === 'none' || !result.data?.length) return null;
+    let now = 0; let before = 0; let paired = 0;
+    for (const row of result.data) {
+        const v = Number(row[result.yKey]); const p = Number(row.previous_value);
+        if (!Number.isFinite(v) || !Number.isFinite(p)) continue;
+        now += v; before += p; paired++;
+    }
+    if (!paired) return null;
+    const avg = String(config.aggregation || 'SUM').toUpperCase() === 'AVG';
+    if (avg) { now /= paired; before /= paired; }
+    const fmt = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const grain = config.comparisonGrain || 'period';
+    const against = config.comparison === 'same_period_last_n'
+        ? `the same period ${Number(config.comparisonOffset) > 1 ? `${config.comparisonOffset} ${grain}s` : `a ${grain}`} earlier`
+        : String(config.timeFilter || '').startsWith('this_') ? `the same days of the ${grain} before` : `the ${grain} before`;
+    const change = before ? (now - before) / Math.abs(before) : null;
+    const how = change === null ? '' : ` (${change >= 0 ? '+' : '−'}${Math.abs(change * 100).toFixed(1)}%)`;
+    return `${avg ? 'On average' : 'In total'}: ${fmt(now)} against ${fmt(before)} in ${against}${how}.`;
+}
+
 export function describeBuilderFinding(result: AnalysisResult | undefined, formatting?: FormattingConfig): string | null {
     if (!result) return null;
+    const compared = describeComparison(result);
+    if (compared) return compared;
     if (result.error || result.config?.secondaryMetrics?.length || (result.config?.comparison && result.config.comparison !== 'none')) return null;
     const rows = result.data || [];
     if (!rows.length) return 'No matching data was found for this question.';

@@ -559,6 +559,17 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (!packSetup) return;
         useSetupStore.getState().saveSetup({ ...packSetup, questions, updatedAt: Date.now() });
     }, [packSetup]);
+    /** A question typed in words: the Calc tab follows the question, then it runs. */
+    const askedInWords = (config: Record<string, unknown>, calculation: TableCalculation | null) => {
+        if (formatting && onUpdateFormatting) {
+            const current = (formatting.tableCalculations || []).filter(c => c !== 'none');
+            const next = calculation ? [calculation] : [];
+            if (JSON.stringify(current) !== JSON.stringify(next)) onUpdateFormatting({ ...formatting, tableCalculations: next });
+        }
+        if (calculation) { setShowGrowthChart(true); setIsAnalyticsExplorer(true); }
+        else { setShowGrowthChart(false); setIsAnalyticsExplorer(false); }
+        runStarter(config);
+    };
     /** Questions to type, for this file (each one fully understood). */
     const wordExamples = useMemo(() => { try { return exampleQuestions(dataset, asOfDate); } catch { return []; } }, [dataset, asOfDate]);
 
@@ -789,7 +800,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     </div>
                 )}
                 {effectiveInitialConfig?._source !== 'ai-sql' && (
-                    <AskInWords dataset={dataset} asOf={asOfDate} examples={wordExamples} onAsk={config => runStarter(config)} />
+                    <AskInWords dataset={dataset} asOf={asOfDate} examples={wordExamples} onAsk={askedInWords} />
                 )}
                 {effectiveInitialConfig?._source !== 'ai-sql' && (
                     <QuestionShelf

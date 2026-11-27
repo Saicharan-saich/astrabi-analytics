@@ -6203,3 +6203,7 @@ html.dark .qi-builder-needs { color: #fbbf24; }
 .qi-target-save { padding: 4px 12px; border-radius: 7px; background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 600; }
 .qi-target-save:disabled { opacity: .4; }
 .qi-target-cancel { padding: 4px 10px; border-radius: 7px; border: 1px solid var(--border-default); color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.qi-ask-chip.is-compare { border-color: rgb(139 92 246 / .5); }
+.qi-ask-chip.is-calc { border-color: rgb(16 185 129 / .5); }
+.qi-ask-source { flex-basis: 100%; font-size: 11.5px; color: var(--text-tertiary); }
+.qi-ask-read > svg { color: var(--color-primary); }
