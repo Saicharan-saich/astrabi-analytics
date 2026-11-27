@@ -2209,6 +2209,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
     }), [yKey]);
 
+    const yKeyRef = useRef(yKey);
+    yKeyRef.current = yKey;
     // Growth % badge — compact box at top-center of the chart canvas
     const growthLabelsPlugin = useMemo<any>(() => ({
         id: 'growthLabels',
@@ -2227,7 +2229,16 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
             let growth = 0;
             const firstWithGrowth = withGrowth[0];
-            if (firstWithGrowth && firstWithGrowth.growth_pct !== undefined && !isNaN(firstWithGrowth.growth_pct)) {
+            // A series of points (this month day by day against last month): the
+            // badge is the change in the total, not the last point's change.
+            const paired = latestData.filter((d: any) => d.previous_value !== undefined && d.previous_value !== null);
+            const valueKey = yKeyRef.current;
+            if (paired.length > 1 && valueKey) {
+                const totalCurr = paired.reduce((sum: number, d: any) => sum + (Number(d[valueKey] ?? d.value) || 0), 0);
+                const totalPrev = paired.reduce((sum: number, d: any) => sum + (Number(d.previous_value) || 0), 0);
+                if (!totalPrev) return;
+                growth = ((totalCurr - totalPrev) / Math.abs(totalPrev)) * 100;
+            } else if (firstWithGrowth && firstWithGrowth.growth_pct !== undefined && !isNaN(firstWithGrowth.growth_pct)) {
                 // For 2-bar comparisons, use the growth_pct from the current period bar
                 growth = Number(firstWithGrowth.growth_pct);
             } else {
